@@ -1,0 +1,102 @@
+use crate::types::{Block, ZoneKind, ZonedBlock};
+
+/// Classify blocks on a page into zones based on position and font.
+pub fn classify_page(
+    blocks: &[Block],
+    page_num: usize,
+    page_height: f32,
+    body_font_size: f32,
+) -> Vec<ZonedBlock> {
+    blocks
+        .iter()
+        .map(|block| {
+            let zone = classify_block(block, page_height, body_font_size);
+            ZonedBlock {
+                block: block.clone(),
+                zone,
+                page_num,
+            }
+        })
+        .collect()
+}
+
+fn classify_block(
+    block: &Block,
+    page_height: f32,
+    body_font_size: f32,
+) -> ZoneKind {
+    let relative_y = block.y / page_height;
+    let block_bottom = (block.y - block.height) / page_height;
+
+    // Header: top ~5%
+    if relative_y > 0.95 {
+        return ZoneKind::Header;
+    }
+
+    // Page number: bottom ~3%, only digits
+    if block_bottom < 0.03 && is_page_number(block) {
+        return ZoneKind::PageNumber;
+    }
+
+    // Footnote: bottom ~25%, smaller font, starts with superscript marker
+    if block_bottom < 0.25
+        && block.font_size < body_font_size * 0.9
+        && has_superscript_start(block)
+    {
+        return ZoneKind::Footnote;
+    }
+
+    ZoneKind::Body
+}
+
+fn is_page_number(block: &Block) -> bool {
+    let text = block.text();
+    let trimmed = text.trim();
+    !trimmed.is_empty() && trimmed.chars().all(|c| c.is_ascii_digit() || c == '-')
+}
+
+fn has_superscript_start(block: &Block) -> bool {
+    block
+        .lines
+        .first()
+        .and_then(|line| line.words.first())
+        .is_some_and(|word| word.is_superscript)
+}
+
+/// Detect if a block is a "References" / "Bibliography" heading.
+pub fn is_reference_heading(block: &Block) -> bool {
+    let text = block.text().to_uppercase();
+    let trimmed = text.trim();
+    matches!(
+        trimmed,
+        "REFERENCES"
+            | "BIBLIOGRAPHY"
+            | "REFERENCES AND NOTES"
+            | "LITERATURE CITED"
+    ) || trimmed.starts_with("REFERENCES")
+        && trimmed.len() < 30
+}
+
+/// Compute the dominant (most common) font size across all pages.
+pub fn compute_body_font_size(all_blocks: &[Vec<Block>]) -> f32 {
+    let mut size_counts: Vec<(i32, usize)> = Vec::new();
+    for blocks in all_blocks {
+        for block in blocks {
+            for line in &block.lines {
+                let key = (line.font_size * 10.0) as i32;
+                if let Some(entry) =
+                    size_counts.iter_mut().find(|(k, _)| *k == key)
+                {
+                    entry.1 += line.words.len();
+                } else {
+                    size_counts.push((key, line.words.len()));
+                }
+            }
+        }
+    }
+    size_counts
+        .iter()
+        .max_by_key(|(_, count)| *count)
+        .map(|(key, _)| *key as f32 / 10.0)
+        .unwrap_or(10.0)
+}
