@@ -29,6 +29,19 @@ static PAGE_RANGE_RE: Lazy<Regex> =
 static NUMBER_RE: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"\d+").unwrap());
 
+/// Compact volume(year)page: "417(1994)181" or "417(1994)181-193"
+static VOLUME_YEAR_PAGE_RE: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r"^(\d+)\(((?:19|20)\d{2})\)(\d+(?:\s*[-–—]\s*\d+)?)$").unwrap()
+});
+
+/// Volume:page: "70:094505" or "95:122002"
+static VOLUME_COLON_PAGE_RE: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"^(\d+):(\d+(?:\s*[-–—]\s*\d+)?)$").unwrap());
+
+/// Compact volume(year) without page: "301(1993)"
+static VOLUME_YEAR_RE: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"^(\d+)\(((?:19|20)\d{2})\)$").unwrap());
+
 static LINE_MARKER_RE: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"^\s*(?:\[(\d+)\]|\((\d+)\)|(\d+)[.\)])\s*").unwrap());
 
@@ -273,6 +286,26 @@ fn classify_gap(text: &str, tokens: &mut Vec<Token>) {
 fn classify_word(word: &str, tokens: &mut Vec<Token>) {
     let clean = word.trim_matches(|c: char| c == ',' || c == '.' || c == ';' || c == ':');
 
+    // Compact volume(year)page: "417(1994)181"
+    if let Some(caps) = VOLUME_YEAR_PAGE_RE.captures(clean) {
+        push_number(tokens, &caps[1]);
+        push_year(tokens, &caps[2]);
+        push_page_or_number(tokens, &caps[3]);
+        return;
+    }
+    // Volume:page: "70:094505"
+    if let Some(caps) = VOLUME_COLON_PAGE_RE.captures(clean) {
+        push_number(tokens, &caps[1]);
+        push_page_or_number(tokens, &caps[2]);
+        return;
+    }
+    // Compact volume(year): "301(1993)"
+    if let Some(caps) = VOLUME_YEAR_RE.captures(clean) {
+        push_number(tokens, &caps[1]);
+        push_year(tokens, &caps[2]);
+        return;
+    }
+
     if clean.eq_ignore_ascii_case("ibid") || clean.eq_ignore_ascii_case("ibid.") {
         tokens.push(Token { kind: TokenKind::Ibid, text: word.to_string(), normalized: None });
         return;
@@ -301,6 +334,35 @@ fn classify_word(word: &str, tokens: &mut Vec<Token>) {
         return;
     }
     tokens.push(Token { kind: TokenKind::Word, text: word.to_string(), normalized: None });
+}
+
+fn push_number(tokens: &mut Vec<Token>, num: &str) {
+    tokens.push(Token {
+        kind: TokenKind::Number,
+        text: num.to_string(),
+        normalized: None,
+    });
+}
+
+fn push_year(tokens: &mut Vec<Token>, year: &str) {
+    tokens.push(Token {
+        kind: TokenKind::Year,
+        text: format!("({year})"),
+        normalized: Some(year.to_string()),
+    });
+}
+
+fn push_page_or_number(tokens: &mut Vec<Token>, page: &str) {
+    let kind = if page.contains('-') || page.contains('–') || page.contains('—') {
+        TokenKind::PageRange
+    } else {
+        TokenKind::Number
+    };
+    tokens.push(Token {
+        kind,
+        text: page.to_string(),
+        normalized: None,
+    });
 }
 
 fn is_punctuation(word: &str) -> bool {

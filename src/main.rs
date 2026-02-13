@@ -53,6 +53,7 @@ fn main() -> Result<()> {
     }
 
     let raw_refs = collect::collect_references(&zoned_pages);
+    let raw_refs = split_semicolon_subrefs(raw_refs);
     let parsed = parse_all_references(&raw_refs);
     print_output(&parsed, cli.pretty)
 }
@@ -96,6 +97,69 @@ fn parse_all_references(
             parse::parse_reference(raw, &tokens)
         })
         .collect()
+}
+
+/// Split reference entries that contain semicolons into sub-references.
+/// In HEP papers, semicolons within a single numbered reference entry
+/// typically separate distinct citations (e.g., "[1] Author1; Author2").
+fn split_semicolon_subrefs(
+    refs: Vec<types::RawReference>,
+) -> Vec<types::RawReference> {
+    let mut result = Vec::new();
+    for raw in refs {
+        if !raw.text.contains(';') {
+            result.push(raw);
+            continue;
+        }
+        let parts: Vec<&str> = raw.text.split(';').collect();
+        if parts.len() <= 1 {
+            result.push(raw);
+            continue;
+        }
+        // Only split if sub-parts look like citations
+        let subrefs: Vec<&str> = parts
+            .iter()
+            .map(|p| p.trim())
+            .filter(|p| !p.is_empty())
+            .collect();
+        if subrefs.len() <= 1 {
+            result.push(raw);
+            continue;
+        }
+        // Check: at least 2 sub-parts should look like citations
+        let citation_count = subrefs.iter().filter(|s| looks_like_citation(s)).count();
+        if citation_count < 2 {
+            result.push(raw);
+            continue;
+        }
+        for subref in &subrefs {
+            result.push(types::RawReference {
+                text: subref.to_string(),
+                linemarker: raw.linemarker.clone(),
+                source: raw.source,
+                page_num: raw.page_num,
+            });
+        }
+    }
+    result
+}
+
+/// Heuristic: does this text fragment look like a citation?
+/// Checks for patterns common in HEP references.
+fn looks_like_citation(text: &str) -> bool {
+    use once_cell::sync::Lazy;
+    use regex::Regex;
+    static YEAR_RE: Lazy<Regex> =
+        Lazy::new(|| Regex::new(r"(?:19|20)\d{2}").unwrap());
+    static ARXIV_RE: Lazy<Regex> =
+        Lazy::new(|| Regex::new(r"(?:arXiv|hep-|astro-|gr-qc|cond-mat|nucl-|math-|quant-ph|physics/)").unwrap());
+
+    YEAR_RE.is_match(text)
+        || ARXIV_RE.is_match(text)
+        || text.contains("doi")
+        || text.contains("DOI")
+        || text.contains("Preprint")
+        || text.contains("preprint")
 }
 
 fn print_output(parsed: &[ParsedReference], pretty: bool) -> Result<()> {
