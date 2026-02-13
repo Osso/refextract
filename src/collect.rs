@@ -174,8 +174,13 @@ fn gather_ref_blocks(
         }
     }
 
+    // Detect marker-based vs author-date format
+    let has_markers = ref_blocks
+        .iter()
+        .any(|(text, _)| count_markers_in_text(text) > 0);
+
     // Collect from subsequent pages
-    gather_subsequent_pages(zoned_pages, loc.page_idx, &mut ref_blocks);
+    gather_subsequent_pages(zoned_pages, loc.page_idx, &mut ref_blocks, has_markers);
     ref_blocks
 }
 
@@ -191,11 +196,14 @@ fn gather_subsequent_pages(
     zoned_pages: &[Vec<ZonedBlock>],
     start_page: usize,
     ref_blocks: &mut Vec<(String, usize)>,
+    use_markers: bool,
 ) {
-    let mut pages_without_markers = 0;
+    let mut pages_without_refs = 0;
     for page_blocks in &zoned_pages[start_page + 1..] {
-        let mut page_has_markers = false;
+        let mut page_has_refs = false;
         let mut page_blocks_buf = Vec::new();
+        let mut page_citation_lines = 0;
+        let mut page_total_lines = 0;
         for zb in page_blocks {
             if zb.zone == ZoneKind::Header || zb.zone == ZoneKind::PageNumber {
                 continue;
@@ -204,20 +212,37 @@ fn gather_subsequent_pages(
                 ref_blocks.extend(page_blocks_buf);
                 return;
             }
-            if has_any_marker(&zb.block) {
-                page_has_markers = true;
+            if use_markers {
+                if has_any_marker(&zb.block) {
+                    page_has_refs = true;
+                }
+            } else {
+                // Accumulate citation density across all blocks on the page
+                for line in &zb.block.lines {
+                    page_total_lines += 1;
+                    if has_citation_content(&line.text()) {
+                        page_citation_lines += 1;
+                    }
+                }
             }
             page_blocks_buf.push((zb.block.text(), zb.page_num));
         }
-        if page_has_markers {
+        // Author-date mode: check page-level citation density
+        if !use_markers && page_citation_lines >= 3
+            && page_total_lines > 0
+            && page_citation_lines * 2 >= page_total_lines
+        {
+            page_has_refs = true;
+        }
+        if page_has_refs {
             ref_blocks.extend(page_blocks_buf);
-            pages_without_markers = 0;
+            pages_without_refs = 0;
         } else {
-            pages_without_markers += 1;
-            if pages_without_markers >= 2 {
+            pages_without_refs += 1;
+            if pages_without_refs >= 2 {
                 return;
             }
-            // Allow one page without markers (continuation lines)
+            // Allow one page without refs (continuation lines)
             ref_blocks.extend(page_blocks_buf);
         }
     }
@@ -399,7 +424,126 @@ fn split_into_references(
         }
     }
     flush_reference(&mut refs, &mut current_text, &current_marker, current_page, source);
+    split_author_date_blobs(&mut refs);
     refs
+}
+
+/// Post-process: split long unmarked refs that are actually concatenated
+/// author-date references (e.g., "Aaij, R., ... [hep-ex]. Abreu, L., ...").
+fn split_author_date_blobs(refs: &mut Vec<RawReference>) {
+    let mut i = 0;
+    while i < refs.len() {
+        if refs[i].text.len() > 500 {
+            let splits = split_author_date_text(&refs[i].text);
+            if splits.len() >= 3 {
+                let source = refs[i].source;
+                let page = refs[i].page_num;
+                let new_refs: Vec<RawReference> = splits
+                    .into_iter()
+                    .map(|t| RawReference {
+                        text: t,
+                        linemarker: None,
+                        source,
+                        page_num: page,
+                    })
+                    .collect();
+                refs.splice(i..i + 1, new_refs);
+                // Don't advance i: re-check from same position
+                // in case the first split part is itself a blob
+                continue;
+            }
+        }
+        i += 1;
+    }
+}
+
+/// Match "Surname, I." pattern that starts an author-date reference.
+/// Surname part: uppercase + letters/accents/hyphens (no punctuation like .:;[]())
+/// Optional compound surname (up to 2 extra words: "Martínez Torres")
+/// Optional PDF artifact char between comma and initial (tilde from ñ)
+static AUTHOR_START_RE: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(
+        r"[A-Z][^\s,.:;\[\]()]+(?:\s[A-Z][^\s,.:;\[\]()]+){0,2}, [^A-Za-z0-9\s]? ?[A-Z]\.",
+    )
+    .unwrap()
+});
+
+/// Split a blob of concatenated author-date references into individual refs.
+/// Splits at positions where ". Surname, I." indicates a new reference.
+fn split_author_date_text(text: &str) -> Vec<String> {
+    let mut split_positions = Vec::new();
+
+    for m in AUTHOR_START_RE.find_iter(text) {
+        let author_pos = m.start();
+        if author_pos == 0 {
+            continue;
+        }
+        let before = text[..author_pos].trim_end();
+        if before.is_empty() || !before.ends_with('.') {
+            continue;
+        }
+        if is_ref_ending_period(before) {
+            split_positions.push(author_pos);
+        }
+    }
+
+    if split_positions.is_empty() {
+        return vec![text.to_string()];
+    }
+
+    let mut refs = Vec::new();
+    let mut last = 0;
+    for &pos in &split_positions {
+        let ref_text = text[last..pos].trim().to_string();
+        if !ref_text.is_empty() {
+            refs.push(ref_text);
+        }
+        last = pos;
+    }
+    if last < text.len() {
+        let ref_text = text[last..].trim().to_string();
+        if !ref_text.is_empty() {
+            refs.push(ref_text);
+        }
+    }
+    refs
+}
+
+/// Check if the period at the end of `before` is a reference-ending period
+/// (not a single-letter initial like "J." or "F.-K.").
+fn is_ref_ending_period(before: &str) -> bool {
+    let without_period = before[..before.len() - 1].trim_end();
+    if without_period.is_empty() {
+        return false;
+    }
+    let last_char = match without_period.chars().last() {
+        Some(c) => c,
+        None => return false,
+    };
+    // Brackets/parens/digits always end refs
+    if matches!(last_char, ']' | ')') || last_char.is_ascii_digit() {
+        return true;
+    }
+    // Get the last whitespace-separated token
+    let last_token = without_period
+        .split_whitespace()
+        .last()
+        .unwrap_or("");
+    // Check if it's an initial or initial compound (e.g., "J", "F.-K")
+    let clean = last_token.trim_end_matches(',');
+    !is_initial_token(clean)
+}
+
+/// Check if a token looks like an author initial: "J", "F.-K", "M", etc.
+fn is_initial_token(token: &str) -> bool {
+    if token.is_empty() {
+        return false;
+    }
+    // Split by hyphens; each part should be a single uppercase letter
+    token.split('-').all(|part| {
+        let trimmed = part.trim_end_matches('.');
+        trimmed.len() == 1 && trimmed.chars().all(|c| c.is_ascii_uppercase())
+    })
 }
 
 fn extract_marker(caps: &regex::Captures) -> Option<String> {
