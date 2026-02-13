@@ -57,6 +57,18 @@ def normalize_journal(title: str) -> str:
     return n
 
 
+def volumes_match(v1: str, v2: str) -> bool:
+    """Flexible volume matching. Handles JCAP/JHEP year-month encoding:
+    extracted "0904" matches INSPIRE "04" (year prefix stripped by INSPIRE)."""
+    if v1 == v2:
+        return True
+    # One may have a year prefix: "0904" ends with "04"
+    short, long = (v1, v2) if len(v1) <= len(v2) else (v2, v1)
+    if len(short) >= 2 and long.endswith(short) and len(long) - len(short) <= 2:
+        return True
+    return False
+
+
 def journals_match(j1: str, j2: str) -> bool:
     """Flexible journal name matching for INSPIRE vs extracted comparison.
 
@@ -153,7 +165,7 @@ def match_refs(inspire_refs: list[dict], extracted_refs: list[dict]) -> tuple[in
         # Try journal + volume match (flexible journal name matching)
         if iref["journal"] and iref["volume"]:
             for ej, ev in ext_jv:
-                if ev == iref["volume"] and journals_match(iref["journal"], ej):
+                if volumes_match(ev, iref["volume"]) and journals_match(iref["journal"], ej):
                     matched_journal += 1
                     break
             else:

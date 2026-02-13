@@ -77,14 +77,34 @@ pub fn is_reference_heading_line(line_text: &str) -> bool {
 }
 
 fn is_heading_text(text: &str) -> bool {
-    matches!(
+    // Strip trailing punctuation (colon, period)
+    let text = text.trim_end_matches(|c: char| c == ':' || c == '.');
+    // Exact matches
+    if matches!(
         text,
         "REFERENCES"
             | "BIBLIOGRAPHY"
             | "REFERENCES AND NOTES"
             | "LITERATURE CITED"
-    ) || text.starts_with("REFERENCES")
-        && text.len() < 30
+    ) {
+        return true;
+    }
+    if text.len() >= 30 {
+        return false;
+    }
+    // Accept section-numbered headings: "IX. REFERENCES", "5. REFERENCES"
+    // Reject running headers with page numbers: "92 REFERENCES", "REFERENCES 91"
+    let prefix = text
+        .chars()
+        .take_while(|c| c.is_ascii_digit() || *c == '.' || *c == ' ')
+        .collect::<String>();
+    let stripped = &text[prefix.len()..];
+    if stripped == "REFERENCES" || stripped == "BIBLIOGRAPHY" {
+        // Reject if numeric prefix has 2+ digits (likely a page number)
+        let digit_count = prefix.chars().filter(|c| c.is_ascii_digit()).count();
+        return digit_count <= 1;
+    }
+    false
 }
 
 /// Compute the dominant (most common) font size across all pages.

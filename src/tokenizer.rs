@@ -70,7 +70,7 @@ struct Span {
 
 fn find_identifier_spans(text: &str) -> Vec<Span> {
     let mut spans = Vec::new();
-    add_regex_spans(&mut spans, text, &DOI_RE, TokenKind::Doi);
+    add_doi_spans(&mut spans, text);
     add_regex_spans(&mut spans, text, &URL_RE, TokenKind::Url);
     add_regex_spans(&mut spans, text, &ARXIV_OLD_RE, TokenKind::ArxivId);
     add_regex_spans(&mut spans, text, &ARXIV_NEW_RE, TokenKind::ArxivId);
@@ -80,6 +80,22 @@ fn find_identifier_spans(text: &str) -> Vec<Span> {
     spans.sort_by_key(|s| s.start);
     remove_overlapping_spans(&mut spans);
     spans
+}
+
+fn add_doi_spans(spans: &mut Vec<Span>, text: &str) {
+    for m in DOI_RE.find_iter(text) {
+        let matched = m.as_str().trim_end_matches(|c: char| ".)]}>".contains(c));
+        let end = m.start() + matched.len();
+        if !overlaps_existing(spans, m.start(), end) {
+            spans.push(Span {
+                start: m.start(),
+                end,
+                kind: TokenKind::Doi,
+                text: matched.to_string(),
+                normalized: None,
+            });
+        }
+    }
 }
 
 fn add_regex_spans(

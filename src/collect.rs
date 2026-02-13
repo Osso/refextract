@@ -37,16 +37,24 @@ struct RefHeadingLoc {
 }
 
 fn find_reference_heading(zoned_pages: &[Vec<ZonedBlock>]) -> Option<RefHeadingLoc> {
-    // First try: standalone heading block
-    for (page_idx, page_blocks) in zoned_pages.iter().enumerate().rev() {
+    // First try: standalone heading block, verified by following reference markers.
+    // Search forwards to find the first valid heading (avoids picking up
+    // running headers near the end of a multi-page reference section).
+    for (page_idx, page_blocks) in zoned_pages.iter().enumerate() {
         for (block_idx, zb) in page_blocks.iter().enumerate() {
-            if zones::is_reference_heading(&zb.block) {
-                return Some(RefHeadingLoc { page_idx, block_idx, line_idx: None });
+            if zones::is_reference_heading(&zb.block)
+                && has_refs_after(zoned_pages, page_idx, block_idx)
+            {
+                return Some(RefHeadingLoc {
+                    page_idx,
+                    block_idx,
+                    line_idx: None,
+                });
             }
         }
     }
     // Second try: heading line embedded within a block
-    for (page_idx, page_blocks) in zoned_pages.iter().enumerate().rev() {
+    for (page_idx, page_blocks) in zoned_pages.iter().enumerate() {
         for (block_idx, zb) in page_blocks.iter().enumerate() {
             for (line_idx, line) in zb.block.lines.iter().enumerate() {
                 if zones::is_reference_heading_line(&line.text()) {
@@ -60,6 +68,45 @@ fn find_reference_heading(zoned_pages: &[Vec<ZonedBlock>]) -> Option<RefHeadingL
         }
     }
     None
+}
+
+/// Verify a heading by checking if blocks after it contain reference markers.
+/// Looks at the next 5 blocks (on same page and following pages).
+fn has_refs_after(
+    zoned_pages: &[Vec<ZonedBlock>],
+    page_idx: usize,
+    block_idx: usize,
+) -> bool {
+    let mut checked = 0;
+    // Check remaining blocks on the same page
+    for zb in &zoned_pages[page_idx][block_idx + 1..] {
+        if zb.zone == ZoneKind::Header || zb.zone == ZoneKind::PageNumber {
+            continue;
+        }
+        if has_any_marker(&zb.block) {
+            return true;
+        }
+        checked += 1;
+        if checked >= 5 {
+            return false;
+        }
+    }
+    // Check blocks on the next page
+    if page_idx + 1 < zoned_pages.len() {
+        for zb in &zoned_pages[page_idx + 1] {
+            if zb.zone == ZoneKind::Header || zb.zone == ZoneKind::PageNumber {
+                continue;
+            }
+            if has_any_marker(&zb.block) {
+                return true;
+            }
+            checked += 1;
+            if checked >= 5 {
+                return false;
+            }
+        }
+    }
+    false
 }
 
 fn gather_ref_blocks(
@@ -105,15 +152,33 @@ fn gather_subsequent_pages(
     start_page: usize,
     ref_blocks: &mut Vec<(String, usize)>,
 ) {
+    let mut pages_without_markers = 0;
     for page_blocks in &zoned_pages[start_page + 1..] {
+        let mut page_has_markers = false;
+        let mut page_blocks_buf = Vec::new();
         for zb in page_blocks {
             if zb.zone == ZoneKind::Header || zb.zone == ZoneKind::PageNumber {
                 continue;
             }
             if zones::is_reference_heading(&zb.block) {
-                break;
+                ref_blocks.extend(page_blocks_buf);
+                return;
             }
-            ref_blocks.push((zb.block.text(), zb.page_num));
+            if has_any_marker(&zb.block) {
+                page_has_markers = true;
+            }
+            page_blocks_buf.push((zb.block.text(), zb.page_num));
+        }
+        if page_has_markers {
+            ref_blocks.extend(page_blocks_buf);
+            pages_without_markers = 0;
+        } else {
+            pages_without_markers += 1;
+            if pages_without_markers >= 2 {
+                return;
+            }
+            // Allow one page without markers (continuation lines)
+            ref_blocks.extend(page_blocks_buf);
         }
     }
 }
@@ -131,8 +196,21 @@ fn collect_refs_by_markers(
     split_into_references(&ref_lines, ReferenceSource::ReferenceSection)
 }
 
-/// Collect lines from blocks that contain at least one line marker.
+/// Collect lines from blocks that contain line markers.
+/// Strategy 1: blocks with 3+ markers (dense reference blocks).
+/// Strategy 2: individual marker blocks from the tail of the document.
 fn collect_marker_block_lines(
+    zoned_pages: &[Vec<ZonedBlock>],
+) -> Vec<(String, usize)> {
+    let dense = collect_dense_marker_blocks(zoned_pages);
+    if !dense.is_empty() {
+        return dense;
+    }
+    collect_trailing_marker_blocks(zoned_pages)
+}
+
+/// Blocks with 3+ markers — dense reference lists (e.g., two-column layout).
+fn collect_dense_marker_blocks(
     zoned_pages: &[Vec<ZonedBlock>],
 ) -> Vec<(String, usize)> {
     let mut blocks = Vec::new();
@@ -141,7 +219,8 @@ fn collect_marker_block_lines(
             if zb.zone == ZoneKind::Header || zb.zone == ZoneKind::PageNumber {
                 continue;
             }
-            if block_has_markers(&zb.block) {
+            let marker_count = count_markers_in_block(&zb.block);
+            if marker_count >= 3 {
                 blocks.push((zb.block.text(), zb.page_num));
             }
         }
@@ -149,12 +228,69 @@ fn collect_marker_block_lines(
     blocks
 }
 
-fn block_has_markers(block: &crate::types::Block) -> bool {
-    let marker_count = block.lines.iter()
+/// Scan backwards from the end of the document for blocks with markers.
+/// Collects individual marker blocks that form a reference section.
+/// Requires 5+ total markers to avoid false positives from numbered lists.
+fn collect_trailing_marker_blocks(
+    zoned_pages: &[Vec<ZonedBlock>],
+) -> Vec<(String, usize)> {
+    let mut blocks = Vec::new();
+    let mut pages_without_markers = 0;
+
+    for page_blocks in zoned_pages.iter().rev() {
+        let mut page_has_markers = false;
+        let mut page_blocks_collected = Vec::new();
+        for zb in page_blocks {
+            if zb.zone == ZoneKind::Header || zb.zone == ZoneKind::PageNumber {
+                continue;
+            }
+            if has_any_marker(&zb.block) {
+                page_blocks_collected.push((zb.block.text(), zb.page_num));
+                page_has_markers = true;
+            }
+        }
+        if page_has_markers {
+            blocks.extend(page_blocks_collected);
+            pages_without_markers = 0;
+        } else {
+            pages_without_markers += 1;
+            if !blocks.is_empty() && pages_without_markers >= 2 {
+                break;
+            }
+        }
+    }
+
+    let total_markers: usize = blocks
+        .iter()
+        .map(|(text, _)| count_markers_in_text(text))
+        .sum();
+    if total_markers < 5 {
+        return Vec::new();
+    }
+
+    blocks.reverse();
+    blocks
+}
+
+fn count_markers_in_block(block: &crate::types::Block) -> usize {
+    block
+        .lines
+        .iter()
         .filter(|l| LINE_MARKER_RE.is_match(&l.text()))
-        .count();
-    // At least 3 markers to avoid matching body text with numbered items
-    marker_count >= 3
+        .count()
+}
+
+fn has_any_marker(block: &crate::types::Block) -> bool {
+    block
+        .lines
+        .iter()
+        .any(|l| LINE_MARKER_RE.is_match(&l.text()))
+}
+
+fn count_markers_in_text(text: &str) -> usize {
+    text.lines()
+        .filter(|l| LINE_MARKER_RE.is_match(l))
+        .count()
 }
 
 /// Split concatenated text blocks into individual references by line markers.

@@ -127,17 +127,20 @@ fn add_prefix_patterns(
     standardized: &str,
     numerations: &[String],
 ) {
+    if numerations.is_empty() {
+        return;
+    }
     let escaped = regex::escape(&prefix.replace('\t', " ").replace("  ", " "));
     let flex_prefix = escaped.replace(r"\ ", r"[\s\-/]+");
-    for num_re in numerations {
-        let full_pattern = format!(r"(?i)\b{flex_prefix}[\s\-/]*{num_re}");
-        if let Ok(re) = Regex::new(&full_pattern) {
-            patterns.push(ReportNumberPattern {
-                prefix: prefix.to_string(),
-                standardized: standardized.to_string(),
-                numeration_re: re,
-            });
-        }
+    // Combine all numerations into a single regex with alternation
+    let num_alt = numerations.join("|");
+    let full_pattern = format!(r"(?i)\b{flex_prefix}[\s\-/]*(?:{num_alt})");
+    if let Ok(re) = Regex::new(&full_pattern) {
+        patterns.push(ReportNumberPattern {
+            prefix: prefix.to_string(),
+            standardized: standardized.to_string(),
+            numeration_re: re,
+        });
     }
 }
 
