@@ -4,10 +4,12 @@ use regex::Regex;
 use crate::types::{RawReference, ReferenceSource, ZoneKind, ZonedBlock};
 use crate::zones;
 
-/// Line marker patterns: [1], (1), 1., 1) — limited to 1-3 digits to avoid matching years.
-/// The bare-number variant (N./N)) requires trailing whitespace/EOL to reject decimals like "0.01".
+/// Line marker patterns: [1], (1), 1., 1) at the start of a line.
+/// Bracketed/paren forms allow up to 4 digits (review papers with 2000+ refs).
+/// Bare-number variants (N./N)) limited to 1-3 digits to avoid matching years like "2024.".
+/// Bare variants also require trailing whitespace/EOL to reject decimals like "0.01".
 static LINE_MARKER_RE: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"^\s*(?:\[(\d{1,3})\]|\((\d{1,3})\)|(\d{1,3})[.\)](?:\s|$))\s*").unwrap());
+    Lazy::new(|| Regex::new(r"^\s*(?:\[(\d{1,4})\]|\((\d{1,4})\)|(\d{1,3})[.\)](?:\s|$))\s*").unwrap());
 
 /// Collect all references from zoned blocks across all pages.
 pub fn collect_references(zoned_pages: &[Vec<ZonedBlock>]) -> Vec<RawReference> {
@@ -175,14 +177,38 @@ fn gather_ref_blocks(
         }
     }
 
-    // Detect marker-based vs author-date format
-    let has_markers = ref_blocks
-        .iter()
-        .any(|(text, _)| count_markers_in_text(text) > 0);
+    // Detect marker-based vs author-date format.
+    // Check collected blocks first; if none yet (heading was on its own page),
+    // peek at the next page's blocks to determine marker presence.
+    let has_markers = detect_marker_format(&ref_blocks, zoned_pages, loc.page_idx);
 
     // Collect from subsequent pages
     gather_subsequent_pages(zoned_pages, loc.page_idx, &mut ref_blocks, has_markers);
     ref_blocks
+}
+
+/// Determine if the reference section uses numbered markers ([1], (1), etc.)
+/// by checking collected blocks. If none collected yet, peek at the next page.
+fn detect_marker_format(
+    ref_blocks: &[(String, usize)],
+    zoned_pages: &[Vec<ZonedBlock>],
+    heading_page: usize,
+) -> bool {
+    if ref_blocks.iter().any(|(text, _)| count_markers_in_text(text) > 0) {
+        return true;
+    }
+    // Heading was on its own page with no content after it — peek ahead
+    if heading_page + 1 < zoned_pages.len() {
+        for zb in &zoned_pages[heading_page + 1] {
+            if zb.zone == ZoneKind::Header || zb.zone == ZoneKind::PageNumber {
+                continue;
+            }
+            if count_markers_in_block(&zb.block) > 0 {
+                return true;
+            }
+        }
+    }
+    false
 }
 
 fn collect_lines_after(zb: &ZonedBlock, heading_line_idx: usize) -> String {
@@ -209,7 +235,11 @@ fn gather_subsequent_pages(
             if zb.zone == ZoneKind::Header || zb.zone == ZoneKind::PageNumber {
                 continue;
             }
-            if zones::is_reference_heading(&zb.block) {
+            // Only stop at a heading that is truly a standalone heading
+            // (short block, not containing reference text). Running headers
+            // like "References 765" and heading+content blocks like
+            // "References\n[1] Author..." should be collected, not split on.
+            if is_standalone_ref_heading(&zb.block) {
                 ref_blocks.extend(page_blocks_buf);
                 return;
             }
@@ -362,6 +392,14 @@ fn is_valid_trailing_cluster(blocks: &[(String, usize)]) -> bool {
         }
     }
     total_markers >= 5 && citation_lines >= 3
+}
+
+/// A standalone reference heading: matches "References"/"Bibliography" text
+/// and the block is short (heading only, not heading + reference content).
+/// This distinguishes true section headings from blocks where "References"
+/// is the first line followed by actual reference text.
+fn is_standalone_ref_heading(block: &crate::types::Block) -> bool {
+    zones::is_reference_heading(block) && block.lines.len() <= 2
 }
 
 fn count_markers_in_block(block: &crate::types::Block) -> usize {
