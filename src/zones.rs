@@ -94,14 +94,26 @@ fn is_heading_text(text: &str) -> bool {
     }
     // Accept section-numbered headings: "IX. REFERENCES", "5. REFERENCES"
     // Reject running headers with page numbers: "92 REFERENCES", "REFERENCES 91"
+    // Check prefix numbers
     let prefix = text
         .chars()
         .take_while(|c| c.is_ascii_digit() || *c == '.' || *c == ' ')
         .collect::<String>();
     let stripped = &text[prefix.len()..];
     if stripped == "REFERENCES" || stripped == "BIBLIOGRAPHY" {
-        // Reject if numeric prefix has 2+ digits (likely a page number)
         let digit_count = prefix.chars().filter(|c| c.is_ascii_digit()).count();
+        return digit_count <= 1;
+    }
+    // Check suffix numbers: "REFERENCES 835", "BIBLIOGRAPHY 12"
+    let suffix = text
+        .chars()
+        .rev()
+        .take_while(|c| c.is_ascii_digit() || *c == ' ')
+        .collect::<String>();
+    let suffix_len = suffix.len();
+    let stripped = text[..text.len() - suffix_len].trim_end();
+    if stripped == "REFERENCES" || stripped == "BIBLIOGRAPHY" {
+        let digit_count = suffix.chars().filter(|c| c.is_ascii_digit()).count();
         return digit_count <= 1;
     }
     false

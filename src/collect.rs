@@ -21,9 +21,13 @@ pub fn collect_references(zoned_pages: &[Vec<ZonedBlock>]) -> Vec<RawReference> 
 fn collect_reference_section(
     zoned_pages: &[Vec<ZonedBlock>],
 ) -> Vec<RawReference> {
-    if let Some(loc) = find_reference_heading(zoned_pages) {
-        let ref_blocks = gather_ref_blocks(zoned_pages, &loc);
-        return split_into_references(&ref_blocks, ReferenceSource::ReferenceSection);
+    let headings = find_all_reference_headings(zoned_pages);
+    if !headings.is_empty() {
+        let mut all_blocks = Vec::new();
+        for loc in &headings {
+            all_blocks.extend(gather_ref_blocks(zoned_pages, loc));
+        }
+        return split_into_references(&all_blocks, ReferenceSource::ReferenceSection);
     }
     // Fallback: no heading found. Scan all blocks for numbered reference lines.
     collect_refs_by_markers(zoned_pages)
@@ -37,16 +41,15 @@ struct RefHeadingLoc {
     line_idx: Option<usize>,
 }
 
-fn find_reference_heading(zoned_pages: &[Vec<ZonedBlock>]) -> Option<RefHeadingLoc> {
-    // First try: standalone heading block, verified by following reference markers.
-    // Search forwards to find the first valid heading (avoids picking up
-    // running headers near the end of a multi-page reference section).
+fn find_all_reference_headings(zoned_pages: &[Vec<ZonedBlock>]) -> Vec<RefHeadingLoc> {
+    let mut headings = Vec::new();
+    // First try: standalone heading blocks, verified by following reference markers.
     for (page_idx, page_blocks) in zoned_pages.iter().enumerate() {
         for (block_idx, zb) in page_blocks.iter().enumerate() {
             if zones::is_reference_heading(&zb.block)
                 && has_refs_after(zoned_pages, page_idx, block_idx)
             {
-                return Some(RefHeadingLoc {
+                headings.push(RefHeadingLoc {
                     page_idx,
                     block_idx,
                     line_idx: None,
@@ -54,14 +57,17 @@ fn find_reference_heading(zoned_pages: &[Vec<ZonedBlock>]) -> Option<RefHeadingL
             }
         }
     }
-    // Second try: heading line embedded within a block (also verified)
+    if !headings.is_empty() {
+        return headings;
+    }
+    // Second try: heading lines embedded within blocks (also verified)
     for (page_idx, page_blocks) in zoned_pages.iter().enumerate() {
         for (block_idx, zb) in page_blocks.iter().enumerate() {
             for (line_idx, line) in zb.block.lines.iter().enumerate() {
                 if zones::is_reference_heading_line(&line.text())
                     && has_refs_after(zoned_pages, page_idx, block_idx)
                 {
-                    return Some(RefHeadingLoc {
+                    headings.push(RefHeadingLoc {
                         page_idx,
                         block_idx,
                         line_idx: Some(line_idx),
@@ -70,7 +76,7 @@ fn find_reference_heading(zoned_pages: &[Vec<ZonedBlock>]) -> Option<RefHeadingL
             }
         }
     }
-    None
+    headings
 }
 
 /// Verify a heading by checking if blocks after it contain citation-like content.
@@ -266,6 +272,7 @@ fn collect_dense_marker_blocks(
 /// Scan backwards from the end of the document for blocks with markers.
 /// Collects individual marker blocks that form a reference section.
 /// Requires 5+ total markers to avoid false positives from numbered lists.
+/// If a cluster doesn't meet the threshold, resets and keeps scanning.
 fn collect_trailing_marker_blocks(
     zoned_pages: &[Vec<ZonedBlock>],
 ) -> Vec<(String, usize)> {
@@ -290,7 +297,12 @@ fn collect_trailing_marker_blocks(
         } else {
             pages_without_markers += 1;
             if !blocks.is_empty() && pages_without_markers >= 2 {
-                break;
+                if is_valid_trailing_cluster(&blocks) {
+                    break;
+                }
+                // Not a valid cluster — reset and keep scanning
+                blocks.clear();
+                pages_without_markers = 0;
             }
         }
     }
@@ -305,6 +317,25 @@ fn collect_trailing_marker_blocks(
 
     blocks.reverse();
     blocks
+}
+
+/// Check if a trailing cluster is a valid reference section:
+/// requires 5+ markers AND citation content in the marker lines.
+fn is_valid_trailing_cluster(blocks: &[(String, usize)]) -> bool {
+    let mut total_markers = 0;
+    let mut citation_lines = 0;
+    for (text, _) in blocks {
+        for line in text.lines() {
+            if LINE_MARKER_RE.is_match(line) {
+                total_markers += 1;
+                let after = LINE_MARKER_RE.replace(line, "");
+                if has_citation_content(after.trim()) {
+                    citation_lines += 1;
+                }
+            }
+        }
+    }
+    total_markers >= 5 && citation_lines >= 3
 }
 
 fn count_markers_in_block(block: &crate::types::Block) -> usize {
