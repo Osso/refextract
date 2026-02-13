@@ -11,7 +11,7 @@ static ARXIV_NEW_RE: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"\d{4}\.\d{4,5}(?:v\d+)?").unwrap());
 
 static ARXIV_OLD_RE: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"(?:hep|astro|cond|gr|math|nucl|physics|quant|cs|nlin|q-bio|q-fin|stat)(?:-[a-z]{2})?/\d{7}(?:v\d+)?").unwrap()
+    Regex::new(r"(?:hep|astro|cond|gr|math|nucl|physics|quant|cs|nlin|q-bio|q-fin|stat)(?:[\s-][a-z]{2,3})?[\s/]+\d{7}(?:v\d+)?").unwrap()
 });
 
 static URL_RE: Lazy<Regex> =
@@ -41,6 +41,14 @@ static VOLUME_COLON_PAGE_RE: Lazy<Regex> =
 /// Compact volume(year) without page: "301(1993)"
 static VOLUME_YEAR_RE: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"^(\d+)\(((?:19|20)\d{2})\)$").unwrap());
+
+/// Volume with issue number: "82(25)" or "82(2-3)" — extract volume, discard issue
+static VOLUME_ISSUE_RE: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"^(\d+)\(\d+(?:[-–—]\d+)?\)$").unwrap());
+
+/// Article number with letter suffix: "111301(R)", "040404/1" — extract digits
+static ARTICLE_NUMBER_RE: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"^(\d+)(?:\([A-Za-z]+\)|/\d+)$").unwrap());
 
 static LINE_MARKER_RE: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"^\s*(?:\[(\d+)\]|\((\d+)\)|(\d+)[.\)])\s*").unwrap());
@@ -85,7 +93,7 @@ fn find_identifier_spans(text: &str) -> Vec<Span> {
     let mut spans = Vec::new();
     add_doi_spans(&mut spans, text);
     add_regex_spans(&mut spans, text, &URL_RE, TokenKind::Url);
-    add_regex_spans(&mut spans, text, &ARXIV_OLD_RE, TokenKind::ArxivId);
+    add_arxiv_old_spans(&mut spans, text);
     add_regex_spans(&mut spans, text, &ARXIV_NEW_RE, TokenKind::ArxivId);
     add_regex_spans(&mut spans, text, &ISBN_RE, TokenKind::Isbn);
     add_report_number_spans(&mut spans, text);
@@ -109,6 +117,45 @@ fn add_doi_spans(spans: &mut Vec<Span>, text: &str) {
             });
         }
     }
+}
+
+/// Add old-style arXiv ID spans with normalization: "hep ph/0202058" → "hep-ph/0202058"
+fn add_arxiv_old_spans(spans: &mut Vec<Span>, text: &str) {
+    for m in ARXIV_OLD_RE.find_iter(text) {
+        if !overlaps_existing(spans, m.start(), m.end()) {
+            let raw = m.as_str().to_string();
+            // Normalize: replace whitespace between category parts with hyphens,
+            // and ensure single slash separator before digits
+            let normalized = normalize_arxiv_old(&raw);
+            spans.push(Span {
+                start: m.start(),
+                end: m.end(),
+                kind: TokenKind::ArxivId,
+                text: normalized,
+                normalized: None,
+            });
+        }
+    }
+}
+
+/// Normalize old-style arXiv ID: "hep ph/0202058" → "hep-ph/0202058"
+fn normalize_arxiv_old(raw: &str) -> String {
+    // Replace spaces between letters with hyphens, collapse multiple separators
+    let mut result = String::new();
+    let mut chars = raw.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == ' ' || c == '\t' {
+            // Check if this space is between letter parts (not before digits)
+            if chars.peek().is_some_and(|&next| next.is_ascii_alphabetic()) {
+                result.push('-');
+            } else {
+                // Space before slash or digits — skip
+            }
+        } else {
+            result.push(c);
+        }
+    }
+    result
 }
 
 fn add_regex_spans(
@@ -325,6 +372,16 @@ fn classify_word(word: &str, tokens: &mut Vec<Token>) {
     if let Some(caps) = VOLUME_YEAR_RE.captures(clean) {
         push_number(tokens, &caps[1]);
         push_year(tokens, &caps[2]);
+        return;
+    }
+    // Volume with issue number: "82(25)" → emit volume only
+    if let Some(caps) = VOLUME_ISSUE_RE.captures(clean) {
+        push_number(tokens, &caps[1]);
+        return;
+    }
+    // Article number with suffix: "111301(R)", "040404/1" → emit digits
+    if let Some(caps) = ARTICLE_NUMBER_RE.captures(clean) {
+        push_number(tokens, &caps[1]);
         return;
     }
 

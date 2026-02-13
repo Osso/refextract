@@ -308,9 +308,7 @@ fn match_full_journal(suffix: &str) -> Option<(usize, String)> {
         }
         // Map normalized match length back to original byte position
         let match_len = find_original_byte_len(suffix, full_name.len());
-        if match_len >= suffix.len()
-            || !suffix.as_bytes()[match_len].is_ascii_alphanumeric()
-        {
+        if is_journal_boundary(suffix, match_len) {
             return Some((match_len, abbrev.clone()));
         }
     }
@@ -331,13 +329,26 @@ fn match_abbrev_journal(suffix: &str) -> Option<(usize, String)> {
         }
         // Find how many original bytes correspond to the matched normalized key
         let byte_len = find_original_byte_len(suffix, norm_key.len());
-        if byte_len >= suffix.len()
-            || !suffix.as_bytes()[byte_len].is_ascii_alphanumeric()
-        {
+        if is_journal_boundary(suffix, byte_len) {
             return Some((byte_len, abbrev.clone()));
         }
     }
     None
+}
+
+/// Check if the match ends at a word boundary.
+/// A boundary exists when: end of string, next char is non-alphanumeric,
+/// or a trailing period was consumed (abbreviation end like "Lett.74").
+fn is_journal_boundary(suffix: &str, match_len: usize) -> bool {
+    if match_len >= suffix.len() {
+        return true;
+    }
+    if !suffix.as_bytes()[match_len].is_ascii_alphanumeric() {
+        return true;
+    }
+    // Period before match_len means the abbreviation ended with a dot,
+    // which is a natural word boundary (e.g., "Lett.74")
+    match_len > 0 && suffix.as_bytes()[match_len - 1] == b'.'
 }
 
 /// Find how many bytes in the original string correspond to N normalized chars.

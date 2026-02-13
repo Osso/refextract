@@ -101,9 +101,35 @@ fn assign_numeration(window: &[Token], result: &mut ParsedReference) {
                 let clean = token.text.trim_matches(|c: char| !c.is_ascii_digit());
                 result.journal_page = Some(clean.to_string());
             }
+            // Section-letter + digits as volume: "D60", "A534", "B272"
+            TokenKind::Word if !volume_found && result.journal_volume.is_none() => {
+                if let Some(vol) = extract_letter_prefixed_number(&token.text) {
+                    result.journal_volume = Some(vol);
+                    volume_found = true;
+                }
+            }
+            // Letter-prefixed page: "B962", "L85", "R183"
+            TokenKind::Word if volume_found && result.journal_page.is_none() => {
+                if let Some(page) = extract_letter_prefixed_number(&token.text) {
+                    result.journal_page = Some(page);
+                }
+            }
             TokenKind::JournalName | TokenKind::Doi | TokenKind::ArxivId => break,
             _ => {}
         }
+    }
+}
+
+/// Extract digits from letter-prefixed number: "D60" → "60", "B962" → "962", "L85" → "85"
+fn extract_letter_prefixed_number(text: &str) -> Option<String> {
+    let clean = text.trim_matches(|c: char| c == ',' || c == '.' || c == ';' || c == ':');
+    if clean.len() >= 2
+        && clean.as_bytes()[0].is_ascii_uppercase()
+        && clean[1..].chars().all(|c| c.is_ascii_digit())
+    {
+        Some(clean[1..].to_string())
+    } else {
+        None
     }
 }
 
