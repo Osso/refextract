@@ -5,8 +5,9 @@ use crate::types::{RawReference, ReferenceSource, ZoneKind, ZonedBlock};
 use crate::zones;
 
 /// Line marker patterns: [1], (1), 1., 1) — limited to 1-3 digits to avoid matching years.
+/// The bare-number variant (N./N)) requires trailing whitespace/EOL to reject decimals like "0.01".
 static LINE_MARKER_RE: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"^\s*(?:\[(\d{1,3})\]|\((\d{1,3})\)|(\d{1,3})[.\)])\s*").unwrap());
+    Lazy::new(|| Regex::new(r"^\s*(?:\[(\d{1,3})\]|\((\d{1,3})\)|(\d{1,3})[.\)](?:\s|$))\s*").unwrap());
 
 /// Collect all references from zoned blocks across all pages.
 pub fn collect_references(zoned_pages: &[Vec<ZonedBlock>]) -> Vec<RawReference> {
@@ -53,11 +54,13 @@ fn find_reference_heading(zoned_pages: &[Vec<ZonedBlock>]) -> Option<RefHeadingL
             }
         }
     }
-    // Second try: heading line embedded within a block
+    // Second try: heading line embedded within a block (also verified)
     for (page_idx, page_blocks) in zoned_pages.iter().enumerate() {
         for (block_idx, zb) in page_blocks.iter().enumerate() {
             for (line_idx, line) in zb.block.lines.iter().enumerate() {
-                if zones::is_reference_heading_line(&line.text()) {
+                if zones::is_reference_heading_line(&line.text())
+                    && has_refs_after(zoned_pages, page_idx, block_idx)
+                {
                     return Some(RefHeadingLoc {
                         page_idx,
                         block_idx,
@@ -70,25 +73,28 @@ fn find_reference_heading(zoned_pages: &[Vec<ZonedBlock>]) -> Option<RefHeadingL
     None
 }
 
-/// Verify a heading by checking if blocks after it contain reference markers.
-/// Looks at the next 5 blocks (on same page and following pages).
+/// Verify a heading by checking if blocks after it contain citation-like content.
+/// Works for both numbered ([1] Author...) and unnumbered (Author, Year, ...) refs.
+/// Prevents TOC entries like "1. Introduction" from being mistaken for refs.
 fn has_refs_after(
     zoned_pages: &[Vec<ZonedBlock>],
     page_idx: usize,
     block_idx: usize,
 ) -> bool {
     let mut checked = 0;
+    let mut citation_score = 0;
     // Check remaining blocks on the same page
     for zb in &zoned_pages[page_idx][block_idx + 1..] {
         if zb.zone == ZoneKind::Header || zb.zone == ZoneKind::PageNumber {
             continue;
         }
-        if has_any_marker(&zb.block) {
+        citation_score += score_citation_block(&zb.block);
+        if citation_score >= 4 {
             return true;
         }
         checked += 1;
         if checked >= 5 {
-            return false;
+            break;
         }
     }
     // Check blocks on the next page
@@ -97,16 +103,44 @@ fn has_refs_after(
             if zb.zone == ZoneKind::Header || zb.zone == ZoneKind::PageNumber {
                 continue;
             }
-            if has_any_marker(&zb.block) {
+            citation_score += score_citation_block(&zb.block);
+            if citation_score >= 4 {
                 return true;
             }
             checked += 1;
             if checked >= 5 {
-                return false;
+                break;
             }
         }
     }
     false
+}
+
+/// Score a block for citation content. Lines with markers + citations score 2,
+/// lines with just citation content score 1.
+fn score_citation_block(block: &crate::types::Block) -> usize {
+    block
+        .lines
+        .iter()
+        .map(|l| {
+            let text = l.text();
+            if let Some(m) = LINE_MARKER_RE.find(&text) {
+                if has_citation_content(&text[m.end()..]) { 2 } else { 0 }
+            } else if has_citation_content(&text) {
+                1
+            } else {
+                0
+            }
+        })
+        .sum()
+}
+
+/// Check if text contains citation-like content (years, journals, arXiv IDs).
+fn has_citation_content(text: &str) -> bool {
+    static CITATION_RE: Lazy<Regex> = Lazy::new(|| {
+        Regex::new(r"(?:(?:19|20)\d{2}|arXiv|hep-|astro-|gr-qc|cond-mat|nucl-|Phys\.|Nucl\.|Lett\.|Rev\.|JHEP|JCAP|doi:|DOI:)").unwrap()
+    });
+    CITATION_RE.is_match(text)
 }
 
 fn gather_ref_blocks(
@@ -209,7 +243,8 @@ fn collect_marker_block_lines(
     collect_trailing_marker_blocks(zoned_pages)
 }
 
-/// Blocks with 3+ markers — dense reference lists (e.g., two-column layout).
+/// Blocks with 3+ markers AND citation content — dense reference lists (e.g., two-column layout).
+/// Requires citation content to distinguish from numbered TOC/list entries.
 fn collect_dense_marker_blocks(
     zoned_pages: &[Vec<ZonedBlock>],
 ) -> Vec<(String, usize)> {
@@ -220,7 +255,7 @@ fn collect_dense_marker_blocks(
                 continue;
             }
             let marker_count = count_markers_in_block(&zb.block);
-            if marker_count >= 3 {
+            if marker_count >= 3 && score_citation_block(&zb.block) >= 4 {
                 blocks.push((zb.block.text(), zb.page_num));
             }
         }
@@ -245,9 +280,9 @@ fn collect_trailing_marker_blocks(
                 continue;
             }
             if has_any_marker(&zb.block) {
-                page_blocks_collected.push((zb.block.text(), zb.page_num));
                 page_has_markers = true;
             }
+            page_blocks_collected.push((zb.block.text(), zb.page_num));
         }
         if page_has_markers {
             blocks.extend(page_blocks_collected);
