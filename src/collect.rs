@@ -4,9 +4,9 @@ use regex::Regex;
 use crate::types::{RawReference, ReferenceSource, ZoneKind, ZonedBlock};
 use crate::zones;
 
-/// Line marker patterns: [1], (1), 1., 1)
+/// Line marker patterns: [1], (1), 1., 1) — limited to 1-3 digits to avoid matching years.
 static LINE_MARKER_RE: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"^\s*(?:\[(\d+)\]|\((\d+)\)|(\d+)[.\)])\s*").unwrap());
+    Lazy::new(|| Regex::new(r"^\s*(?:\[(\d{1,3})\]|\((\d{1,3})\)|(\d{1,3})[.\)])\s*").unwrap());
 
 /// Collect all references from zoned blocks across all pages.
 pub fn collect_references(zoned_pages: &[Vec<ZonedBlock>]) -> Vec<RawReference> {
@@ -20,23 +20,42 @@ pub fn collect_references(zoned_pages: &[Vec<ZonedBlock>]) -> Vec<RawReference> 
 fn collect_reference_section(
     zoned_pages: &[Vec<ZonedBlock>],
 ) -> Vec<RawReference> {
-    let ref_start = find_reference_heading(zoned_pages);
-    let Some((page_idx, block_idx)) = ref_start else {
-        return Vec::new();
-    };
-
-    let ref_blocks = gather_ref_blocks(zoned_pages, page_idx, block_idx);
-    split_into_references(&ref_blocks, ReferenceSource::ReferenceSection)
+    if let Some(loc) = find_reference_heading(zoned_pages) {
+        let ref_blocks = gather_ref_blocks(zoned_pages, &loc);
+        return split_into_references(&ref_blocks, ReferenceSource::ReferenceSection);
+    }
+    // Fallback: no heading found. Scan all blocks for numbered reference lines.
+    collect_refs_by_markers(zoned_pages)
 }
 
-fn find_reference_heading(
-    zoned_pages: &[Vec<ZonedBlock>],
-) -> Option<(usize, usize)> {
-    // Search backwards through pages
+/// Location of a reference heading: page index, block index, and optionally
+/// the line index within the block (if the heading is inside a larger block).
+struct RefHeadingLoc {
+    page_idx: usize,
+    block_idx: usize,
+    line_idx: Option<usize>,
+}
+
+fn find_reference_heading(zoned_pages: &[Vec<ZonedBlock>]) -> Option<RefHeadingLoc> {
+    // First try: standalone heading block
     for (page_idx, page_blocks) in zoned_pages.iter().enumerate().rev() {
         for (block_idx, zb) in page_blocks.iter().enumerate() {
             if zones::is_reference_heading(&zb.block) {
-                return Some((page_idx, block_idx));
+                return Some(RefHeadingLoc { page_idx, block_idx, line_idx: None });
+            }
+        }
+    }
+    // Second try: heading line embedded within a block
+    for (page_idx, page_blocks) in zoned_pages.iter().enumerate().rev() {
+        for (block_idx, zb) in page_blocks.iter().enumerate() {
+            for (line_idx, line) in zb.block.lines.iter().enumerate() {
+                if zones::is_reference_heading_line(&line.text()) {
+                    return Some(RefHeadingLoc {
+                        page_idx,
+                        block_idx,
+                        line_idx: Some(line_idx),
+                    });
+                }
             }
         }
     }
@@ -45,33 +64,97 @@ fn find_reference_heading(
 
 fn gather_ref_blocks(
     zoned_pages: &[Vec<ZonedBlock>],
-    start_page: usize,
-    start_block: usize,
+    loc: &RefHeadingLoc,
 ) -> Vec<(String, usize)> {
     let mut ref_blocks = Vec::new();
 
-    // Collect blocks after the heading on the same page
-    for zb in &zoned_pages[start_page][start_block + 1..] {
+    // If heading is embedded within a block, collect remaining lines from that block
+    let first_full_block = if let Some(line_idx) = loc.line_idx {
+        let zb = &zoned_pages[loc.page_idx][loc.block_idx];
+        let remaining = collect_lines_after(zb, line_idx);
+        if !remaining.is_empty() {
+            ref_blocks.push((remaining, zb.page_num));
+        }
+        loc.block_idx + 1
+    } else {
+        loc.block_idx + 1
+    };
+
+    // Collect remaining blocks on the same page
+    for zb in &zoned_pages[loc.page_idx][first_full_block..] {
         if zb.zone != ZoneKind::Header && zb.zone != ZoneKind::PageNumber {
             ref_blocks.push((zb.block.text(), zb.page_num));
         }
     }
 
     // Collect from subsequent pages
+    gather_subsequent_pages(zoned_pages, loc.page_idx, &mut ref_blocks);
+    ref_blocks
+}
+
+fn collect_lines_after(zb: &ZonedBlock, heading_line_idx: usize) -> String {
+    zb.block.lines[heading_line_idx + 1..]
+        .iter()
+        .map(|l| l.text())
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn gather_subsequent_pages(
+    zoned_pages: &[Vec<ZonedBlock>],
+    start_page: usize,
+    ref_blocks: &mut Vec<(String, usize)>,
+) {
     for page_blocks in &zoned_pages[start_page + 1..] {
         for zb in page_blocks {
             if zb.zone == ZoneKind::Header || zb.zone == ZoneKind::PageNumber {
                 continue;
             }
-            // Stop at a new section heading
             if zones::is_reference_heading(&zb.block) {
                 break;
             }
             ref_blocks.push((zb.block.text(), zb.page_num));
         }
     }
+}
 
-    ref_blocks
+/// Fallback: find references by scanning blocks that contain numbered markers.
+/// Collects lines from blocks that have at least one `[N]` marker, skipping
+/// body text blocks between reference columns.
+fn collect_refs_by_markers(
+    zoned_pages: &[Vec<ZonedBlock>],
+) -> Vec<RawReference> {
+    let ref_lines = collect_marker_block_lines(zoned_pages);
+    if ref_lines.is_empty() {
+        return Vec::new();
+    }
+    split_into_references(&ref_lines, ReferenceSource::ReferenceSection)
+}
+
+/// Collect lines from blocks that contain at least one line marker.
+fn collect_marker_block_lines(
+    zoned_pages: &[Vec<ZonedBlock>],
+) -> Vec<(String, usize)> {
+    let mut blocks = Vec::new();
+    for page_blocks in zoned_pages {
+        for zb in page_blocks {
+            if zb.zone == ZoneKind::Header || zb.zone == ZoneKind::PageNumber {
+                continue;
+            }
+            if block_has_markers(&zb.block) {
+                blocks.push((zb.block.text(), zb.page_num));
+            }
+        }
+    }
+    blocks
+}
+
+fn block_has_markers(block: &crate::types::Block) -> bool {
+    let marker_count = block.lines.iter()
+        .filter(|l| LINE_MARKER_RE.is_match(&l.text()))
+        .count();
+    // At least 3 markers to avoid matching body text with numbered items
+    marker_count >= 3
 }
 
 /// Split concatenated text blocks into individual references by line markers.

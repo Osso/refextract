@@ -1,2 +1,5 @@
 /target
 tests/fixtures/*.pdf
+tests/fixtures/pdfs/
+tests/fixtures/metadata/
+tests/fixtures/results/

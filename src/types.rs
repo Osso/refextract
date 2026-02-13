@@ -70,7 +70,7 @@ impl Block {
             .iter()
             .map(|l| l.text())
             .collect::<Vec<_>>()
-            .join(" ")
+            .join("\n")
     }
 }
 

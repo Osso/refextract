@@ -11,6 +11,7 @@ pub fn group_page(page: &PageChars) -> Vec<Block> {
 
     let words = group_chars_into_words(page, avg_char_width, dominant_font_size);
     let lines = group_words_into_lines(&words);
+    let lines = split_columns(lines, page.width);
     group_lines_into_blocks(&lines)
 }
 
@@ -157,6 +158,118 @@ fn group_words_into_lines(words: &[Word]) -> Vec<Line> {
     // Sort lines by y position (top to bottom = high y to low y in PDF coords)
     lines.sort_by(|a, b| b.y.partial_cmp(&a.y).unwrap());
     lines
+}
+
+/// Detect two-column layout and split lines into reading order.
+///
+/// If a consistent vertical gap divides the page into two columns,
+/// splits each line at the boundary and returns left-column lines
+/// followed by right-column lines (both top-to-bottom).
+fn split_columns(lines: Vec<Line>, page_width: f32) -> Vec<Line> {
+    let boundary = detect_column_boundary(&lines, page_width);
+    let Some(boundary) = boundary else {
+        return lines;
+    };
+
+    let mut left_lines = Vec::new();
+    let mut right_lines = Vec::new();
+
+    for line in &lines {
+        let (left_words, right_words) = partition_words(&line.words, boundary);
+        if !left_words.is_empty() {
+            left_lines.push(make_line(left_words, line.y, line.font_size));
+        }
+        if !right_words.is_empty() {
+            right_lines.push(make_line(right_words, line.y, line.font_size));
+        }
+    }
+
+    left_lines.extend(right_lines);
+    left_lines
+}
+
+/// Find the x-coordinate of a column gap, if the page is two-column.
+///
+/// Looks for a vertical strip in the middle 30-70% of the page where
+/// no words exist, but words exist on both sides.
+fn detect_column_boundary(lines: &[Line], page_width: f32) -> Option<f32> {
+    // Build histogram of word coverage in x-buckets
+    let n_buckets = 100;
+    let bucket_width = page_width / n_buckets as f32;
+    let mut coverage = vec![0u32; n_buckets];
+
+    for line in lines {
+        for word in &line.words {
+            let start = ((word.x / page_width) * n_buckets as f32) as usize;
+            let end = (((word.x + word.width) / page_width) * n_buckets as f32) as usize;
+            for bucket in &mut coverage[start.min(n_buckets - 1)..=end.min(n_buckets - 1)] {
+                *bucket += 1;
+            }
+        }
+    }
+
+    find_gap_in_coverage(&coverage, bucket_width, lines.len())
+}
+
+fn find_gap_in_coverage(
+    coverage: &[u32],
+    bucket_width: f32,
+    num_lines: usize,
+) -> Option<f32> {
+    let n_buckets = coverage.len();
+    // Look for empty/sparse gap in the middle 30-70% of the page
+    let search_start = n_buckets * 30 / 100;
+    let search_end = n_buckets * 70 / 100;
+    let threshold = (num_lines as u32) / 10; // allow sparse coverage
+
+    let mut best_gap_start = 0;
+    let mut best_gap_len = 0;
+    let mut gap_start = 0;
+    let mut in_gap = false;
+
+    for i in search_start..search_end {
+        if coverage[i] <= threshold {
+            if !in_gap {
+                gap_start = i;
+                in_gap = true;
+            }
+            let gap_len = i - gap_start + 1;
+            if gap_len > best_gap_len {
+                best_gap_len = gap_len;
+                best_gap_start = gap_start;
+            }
+        } else {
+            in_gap = false;
+        }
+    }
+
+    // Gap must be at least 2% of page width
+    if best_gap_len < 2 {
+        return None;
+    }
+
+    let gap_center = (best_gap_start as f32 + best_gap_len as f32 / 2.0) * bucket_width;
+    Some(gap_center)
+}
+
+fn partition_words(words: &[Word], boundary: f32) -> (Vec<Word>, Vec<Word>) {
+    let mut left = Vec::new();
+    let mut right = Vec::new();
+    for word in words {
+        let word_center = word.x + word.width / 2.0;
+        if word_center < boundary {
+            left.push(word.clone());
+        } else {
+            right.push(word.clone());
+        }
+    }
+    (left, right)
+}
+
+fn make_line(words: Vec<Word>, y: f32, font_size: f32) -> Line {
+    let x_start = words.iter().map(|w| w.x).reduce(f32::min).unwrap();
+    let x_end = words.iter().map(|w| w.x + w.width).reduce(f32::max).unwrap();
+    Line { words, y, x_start, x_end, font_size }
 }
 
 fn group_lines_into_blocks(lines: &[Line]) -> Vec<Block> {

@@ -67,14 +67,24 @@ fn has_superscript_start(block: &Block) -> bool {
 pub fn is_reference_heading(block: &Block) -> bool {
     let text = block.text().to_uppercase();
     let trimmed = text.trim();
+    is_heading_text(trimmed)
+}
+
+/// Check if a single line's text is a reference heading.
+pub fn is_reference_heading_line(line_text: &str) -> bool {
+    let trimmed = line_text.trim().to_uppercase();
+    is_heading_text(&trimmed)
+}
+
+fn is_heading_text(text: &str) -> bool {
     matches!(
-        trimmed,
+        text,
         "REFERENCES"
             | "BIBLIOGRAPHY"
             | "REFERENCES AND NOTES"
             | "LITERATURE CITED"
-    ) || trimmed.starts_with("REFERENCES")
-        && trimmed.len() < 30
+    ) || text.starts_with("REFERENCES")
+        && text.len() < 30
 }
 
 /// Compute the dominant (most common) font size across all pages.
