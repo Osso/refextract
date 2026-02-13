@@ -89,7 +89,8 @@ fn has_refs_after(
 ) -> bool {
     let mut checked = 0;
     let mut citation_score = 0;
-    // Check remaining blocks on the same page
+    // Check remaining blocks on the same page (up to 15 for two-column layouts
+    // where each line is a separate block)
     for zb in &zoned_pages[page_idx][block_idx + 1..] {
         if zb.zone == ZoneKind::Header || zb.zone == ZoneKind::PageNumber {
             continue;
@@ -99,7 +100,7 @@ fn has_refs_after(
             return true;
         }
         checked += 1;
-        if checked >= 5 {
+        if checked >= 15 {
             break;
         }
     }
@@ -114,7 +115,7 @@ fn has_refs_after(
                 return true;
             }
             checked += 1;
-            if checked >= 5 {
+            if checked >= 15 {
                 break;
             }
         }
@@ -457,19 +458,24 @@ fn split_author_date_blobs(refs: &mut Vec<RawReference>) {
     }
 }
 
-/// Match "Surname, I." pattern that starts an author-date reference.
+/// Match "Surname, I." or "Surname, FirstName" pattern that starts an
+/// author-date reference. Supports:
+/// - Initial format: "Voloshin, M." / "Martínez Torres, A."
+/// - Full name format: "Afkhami-Jeddi, Nima" / "Alday, Luis"
 /// Surname part: uppercase + letters/accents/hyphens (no punctuation like .:;[]())
-/// Optional compound surname (up to 2 extra words: "Martínez Torres")
+/// Optional compound surname (up to 2 extra words)
 /// Optional PDF artifact char between comma and initial (tilde from ñ)
 static AUTHOR_START_RE: Lazy<Regex> = Lazy::new(|| {
     Regex::new(
-        r"[A-Z][^\s,.:;\[\]()]+(?:\s[A-Z][^\s,.:;\[\]()]+){0,2}, [^A-Za-z0-9\s]? ?[A-Z]\.",
+        r"[A-Z][^\s,.:;\[\]()]+(?:\s[A-Z][^\s,.:;\[\]()]+){0,2}, (?:[^A-Za-z0-9\s]? ?[A-Z]\.|[A-Z][a-z]{2,})",
     )
     .unwrap()
 });
 
 /// Split a blob of concatenated author-date references into individual refs.
-/// Splits at positions where ". Surname, I." indicates a new reference.
+/// Splits at positions where a reference ending precedes "Surname, I." or
+/// "Surname, FirstName". Reference endings: period after non-initial token,
+/// closing bracket/paren, or digit (page number).
 fn split_author_date_text(text: &str) -> Vec<String> {
     let mut split_positions = Vec::new();
 
@@ -479,10 +485,10 @@ fn split_author_date_text(text: &str) -> Vec<String> {
             continue;
         }
         let before = text[..author_pos].trim_end();
-        if before.is_empty() || !before.ends_with('.') {
+        if before.is_empty() {
             continue;
         }
-        if is_ref_ending_period(before) {
+        if is_ref_boundary(before) {
             split_positions.push(author_pos);
         }
     }
@@ -507,6 +513,21 @@ fn split_author_date_text(text: &str) -> Vec<String> {
         }
     }
     refs
+}
+
+/// Check if text before a potential split point looks like the end of a reference.
+/// Accepts: period after non-initial, closing bracket/paren, digit (page number).
+fn is_ref_boundary(before: &str) -> bool {
+    let last = match before.chars().last() {
+        Some(c) => c,
+        None => return false,
+    };
+    match last {
+        '.' => is_ref_ending_period(before),
+        ']' | ')' => true,
+        c if c.is_ascii_digit() => true,
+        _ => false,
+    }
 }
 
 /// Check if the period at the end of `before` is a reference-ending period
