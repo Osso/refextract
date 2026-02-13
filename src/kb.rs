@@ -7,7 +7,9 @@ static JOURNAL_TITLES_KB: &str = include_str!("../kbs/journal-titles.kb");
 static REPORT_NUMBERS_KB: &str = include_str!("../kbs/report-numbers.kb");
 static COLLABORATIONS_KB: &str = include_str!("../kbs/collaborations.kb");
 
-/// Journal title mapping: uppercase full name → abbreviated name.
+/// Journal title mapping: normalized full name → abbreviated name.
+/// Keys are normalized (dots stripped, whitespace collapsed, uppercased)
+/// so that text like "Astrophys. J. Suppl." can match KB entry "ASTROPHYS J SUPPL".
 /// Sorted by key length descending for longest-match-first lookup.
 pub static JOURNAL_TITLES: Lazy<Vec<(String, String)>> = Lazy::new(|| {
     let mut entries: Vec<(String, String)> = JOURNAL_TITLES_KB
@@ -18,7 +20,7 @@ pub static JOURNAL_TITLES: Lazy<Vec<(String, String)>> = Lazy::new(|| {
                 return None;
             }
             let (full, abbrev) = line.split_once("---")?;
-            Some((full.trim().to_uppercase(), abbrev.trim().to_string()))
+            Some((normalize_abbrev(full.trim()), abbrev.trim().to_string()))
         })
         .collect();
     entries.sort_by(|a, b| b.0.len().cmp(&a.0.len()));
@@ -40,7 +42,10 @@ pub static JOURNAL_ABBREVS: Lazy<Vec<(String, String)>> = Lazy::new(|| {
             let abbrev = abbrev.trim();
             // Normalize: "Phys. Rev. D" → "PHYS REV D" for matching
             let normalized = normalize_abbrev(abbrev);
-            if normalized.len() < 3 || !seen.insert(normalized.clone()) {
+            // Skip short abbreviations — too many false positives
+            // e.g., "EN" matches "Witten,", "PR" matches "er," in author names
+            // Require at least 4 chars (e.g., "JHEP", "JCAP", "ZPC " ok, "EN" "PR" not)
+            if normalized.len() < 4 || !seen.insert(normalized.clone()) {
                 return None;
             }
             Some((normalized, abbrev.to_string()))
@@ -277,18 +282,28 @@ pub fn match_journal_name(text: &str, pos: usize) -> Option<(usize, String)> {
     if !text.is_char_boundary(pos) {
         return None;
     }
+    // Must be at a word boundary: position 0 or preceded by non-alphanumeric.
+    // Prevents matching "AP" inside "WMAP" or "EN" inside "Witten".
+    if pos > 0 && text.as_bytes()[pos - 1].is_ascii_alphanumeric() {
+        return None;
+    }
     let suffix = &text[pos..];
     match_full_journal(suffix)
         .or_else(|| match_abbrev_journal(suffix))
 }
 
 fn match_full_journal(suffix: &str) -> Option<(usize, String)> {
-    let upper = suffix.to_uppercase();
+    // Must start with an uppercase letter (journal names are capitalized)
+    if !suffix.as_bytes().first().is_some_and(|b| b.is_ascii_uppercase()) {
+        return None;
+    }
+    let normalized = normalize_abbrev(suffix);
     for (full_name, abbrev) in JOURNAL_TITLES.iter() {
-        if !upper.starts_with(full_name.as_str()) {
+        if !normalized.starts_with(full_name.as_str()) {
             continue;
         }
-        let match_len = full_name.len();
+        // Map normalized match length back to original byte position
+        let match_len = find_original_byte_len(suffix, full_name.len());
         if match_len >= suffix.len()
             || !suffix.as_bytes()[match_len].is_ascii_alphanumeric()
         {
@@ -299,6 +314,12 @@ fn match_full_journal(suffix: &str) -> Option<(usize, String)> {
 }
 
 fn match_abbrev_journal(suffix: &str) -> Option<(usize, String)> {
+    // First char of suffix must be start of a word (uppercase letter)
+    let first = suffix.as_bytes().first()?;
+    if !first.is_ascii_uppercase() {
+        return None;
+    }
+
     let normalized = normalize_abbrev(suffix);
     for (norm_key, abbrev) in JOURNAL_ABBREVS.iter() {
         if !normalized.starts_with(norm_key.as_str()) {

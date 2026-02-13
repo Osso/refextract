@@ -35,7 +35,44 @@ def normalize_journal(title: str) -> str:
     """Normalize journal title for comparison: strip dots, spaces, lowercase."""
     if not title:
         return ""
-    return re.sub(r"[\s.]+", "", title).lower()
+    n = re.sub(r"[\s.]+", "", title).lower()
+    # Known equivalent abbreviations
+    n = n.replace("rept", "rep")
+    n = n.replace("annu", "ann")
+    # Strip trailing "ser" / "series" (supplement series)
+    for suffix in ("series", "ser"):
+        if n.endswith(suffix):
+            n = n[:-len(suffix)]
+            break
+    # Map full forms to INSPIRE short forms
+    equiv = {
+        "jhighenergyphys": "jhep",
+        "jcosmolastropartphys": "jcap",
+        "nuclinstrummethodsphysres": "nuclinstrummeth",
+    }
+    for full, short in equiv.items():
+        if n.startswith(full):
+            n = short + n[len(full):]
+            break
+    return n
+
+
+def journals_match(j1: str, j2: str) -> bool:
+    """Flexible journal name matching for INSPIRE vs extracted comparison.
+
+    Handles section letters (Phys.Rev.D → physrevd vs physrev)
+    and minor abbreviation differences.
+    """
+    if not j1 or not j2:
+        return False
+    if j1 == j2:
+        return True
+    # Prefix match: shorter is prefix of longer, max 3-char diff,
+    # minimum 6-char match to avoid "phys" matching "physrev"
+    short, long = (j1, j2) if len(j1) <= len(j2) else (j2, j1)
+    if len(short) >= 6 and long.startswith(short) and len(long) - len(short) <= 3:
+        return True
+    return False
 
 
 def load_inspire_refs(meta_path: str) -> list[dict]:
@@ -96,11 +133,11 @@ def match_refs(inspire_refs: list[dict], extracted_refs: list[dict]) -> tuple[in
     # Build lookup sets from extracted refs
     ext_arxiv = {r["arxiv"] for r in extracted_refs if r["arxiv"]}
     ext_doi = {r["doi"] for r in extracted_refs if r["doi"]}
-    ext_jv = {
+    ext_jv = [
         (r["journal"], r["volume"])
         for r in extracted_refs
         if r["journal"] and r["volume"]
-    }
+    ]
 
     for iref in inspire_refs:
         # Try arXiv match first
@@ -113,11 +150,15 @@ def match_refs(inspire_refs: list[dict], extracted_refs: list[dict]) -> tuple[in
             matched_doi += 1
             continue
 
-        # Try journal + volume match
+        # Try journal + volume match (flexible journal name matching)
         if iref["journal"] and iref["volume"]:
-            if (iref["journal"], iref["volume"]) in ext_jv:
-                matched_journal += 1
+            for ej, ev in ext_jv:
+                if ev == iref["volume"] and journals_match(iref["journal"], ej):
+                    matched_journal += 1
+                    break
+            else:
                 continue
+            continue
 
     return matched_arxiv, matched_journal, matched_doi
 

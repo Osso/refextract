@@ -60,8 +60,8 @@ download_pdf() {
         return 0
     fi
 
-    # arXiv rate limit: wait 3 seconds between requests
-    sleep 3
+    # arXiv rate limit: be polite, 10 seconds between requests
+    sleep 10
 
     if curl -sfL "https://arxiv.org/pdf/${arxiv_id}" -o "$pdf_path" 2>/dev/null; then
         # Verify it's actually a PDF (not an error page)

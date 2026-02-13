@@ -128,6 +128,7 @@ fn add_journal_name_spans(spans: &mut Vec<Span>, text: &str) {
             continue;
         }
         if let Some((len, abbrev)) = kb::match_journal_name(text, pos) {
+            let (len, abbrev) = extend_section_letter(text, pos, len, abbrev);
             spans.push(Span {
                 start: pos,
                 end: pos + len,
@@ -140,6 +141,35 @@ fn add_journal_name_spans(spans: &mut Vec<Span>, text: &str) {
             pos += 1;
         }
     }
+}
+
+/// Extend a journal match to include a section letter if present.
+/// "Phys. Rev." + " D31" → "Phys. Rev. D" (volume "31" becomes a separate token).
+/// "Nucl. Phys." + " B253" → "Nucl. Phys. B"
+fn extend_section_letter(
+    text: &str,
+    pos: usize,
+    len: usize,
+    abbrev: String,
+) -> (usize, String) {
+    let remaining = &text[pos + len..].as_bytes();
+    // Skip optional whitespace
+    let mut i = 0;
+    while i < remaining.len() && remaining[i] == b' ' {
+        i += 1;
+    }
+    // Single uppercase letter followed immediately by a digit
+    if i < remaining.len()
+        && remaining[i].is_ascii_uppercase()
+        && i + 1 < remaining.len()
+        && remaining[i + 1].is_ascii_digit()
+    {
+        let letter = remaining[i] as char;
+        let new_len = len + i + 1;
+        let new_abbrev = format!("{} {}", abbrev, letter);
+        return (new_len, new_abbrev);
+    }
+    (len, abbrev)
 }
 
 /// Find byte ranges of quoted text (both smart quotes and ASCII quotes).
