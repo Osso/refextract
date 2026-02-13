@@ -21,7 +21,7 @@ static ISBN_RE: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"(?:978|979)[-\s]?\d[-\s]?\d{2,5}[-\s]?\d{2,5}[-\s]?\d").unwrap());
 
 static YEAR_RE: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"\(?((?:19|20)\d{2})\)?").unwrap());
+    Lazy::new(|| Regex::new(r"^\(?((?:19|20)\d{2})[a-z]?\)?$").unwrap());
 
 static PAGE_RANGE_RE: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"\d+\s*[-–—]\s*\d+").unwrap());
@@ -182,8 +182,11 @@ fn extend_section_letter(
     abbrev: String,
 ) -> (usize, String) {
     let remaining = &text[pos + len..].as_bytes();
-    // Skip optional whitespace
     let mut i = 0;
+    // Skip optional comma + whitespace (for "Journal, D7:1888" format)
+    if i < remaining.len() && remaining[i] == b',' {
+        i += 1;
+    }
     while i < remaining.len() && remaining[i] == b' ' {
         i += 1;
     }
@@ -278,9 +281,28 @@ fn fill_tokens(text: &str, spans: &[Span], tokens: &mut Vec<Token>) {
 
 /// Classify remaining text fragments into words, years, numbers, etc.
 fn classify_gap(text: &str, tokens: &mut Vec<Token>) {
-    for word in text.split_whitespace() {
-        classify_word(word, tokens);
+    let words: Vec<&str> = text.split_whitespace().collect();
+    let mut i = 0;
+    while i < words.len() {
+        // Re-join broken page ranges: "1547–" + "1553" → "1547–1553"
+        // Common in two-column PDFs where "179:1547– 1553" spans a line break
+        if i + 1 < words.len()
+            && ends_with_dash(words[i])
+            && words[i + 1].as_bytes().first().is_some_and(|b| b.is_ascii_digit())
+        {
+            let joined = format!("{}{}", words[i], words[i + 1]);
+            classify_word(&joined, tokens);
+            i += 2;
+        } else {
+            classify_word(words[i], tokens);
+            i += 1;
+        }
     }
+}
+
+fn ends_with_dash(word: &str) -> bool {
+    let trimmed = word.trim_end_matches(|c: char| c == ',' || c == '.' || c == ';' || c == ':');
+    trimmed.ends_with('-') || trimmed.ends_with('–') || trimmed.ends_with('—')
 }
 
 fn classify_word(word: &str, tokens: &mut Vec<Token>) {

@@ -32,13 +32,27 @@ def normalize_doi(doi: str) -> str:
 
 
 def normalize_journal(title: str) -> str:
-    """Normalize journal title for comparison: strip dots, spaces, lowercase."""
+    """Normalize journal title for comparison: strip non-alpha, lowercase."""
     if not title:
         return ""
-    n = re.sub(r"[\s.]+", "", title).lower()
+    n = re.sub(r"[^a-zA-Z0-9]+", "", title).lower()
     # Known equivalent abbreviations
     n = n.replace("rept", "rep")
     n = n.replace("annu", "ann")
+    n = n.replace("quantum", "quant")
+    n = n.replace("gravity", "grav")
+    n = n.replace("methods", "meth")
+    n = n.replace("annals", "ann")
+    n = n.replace("polon", "pol")
+    n = n.replace("atom", "at")
+    n = n.replace("nuovo", "nuov")
+    n = n.replace("cimento", "cim")
+    n = n.replace("relativ", "rel")
+    n = n.replace("astron", "astr")
+    n = n.replace("europhys", "eurphys")
+    n = n.replace("royal", "r")
+    n = n.replace("roy", "r")
+    n = n.replace("spectop", "st")
     # Strip trailing "ser" / "series" (supplement series)
     for suffix in ("series", "ser"):
         if n.endswith(suffix):
@@ -48,7 +62,8 @@ def normalize_journal(title: str) -> str:
     equiv = {
         "jhighenergyphys": "jhep",
         "jcosmolastropartphys": "jcap",
-        "nuclinstrummethodsphysres": "nuclinstrummeth",
+        "nuclinstrummethphysres": "nuclinstrummeth",
+        "eurphyslett": "epl",
     }
     for full, short in equiv.items():
         if n.startswith(full):
