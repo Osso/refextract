@@ -477,14 +477,14 @@ fn split_into_references(
     refs
 }
 
-/// Post-process: split long unmarked refs that are actually concatenated
+/// Post-process: split unmarked refs that are actually concatenated
 /// author-date references (e.g., "Aaij, R., ... [hep-ex]. Abreu, L., ...").
 fn split_author_date_blobs(refs: &mut Vec<RawReference>) {
     let mut i = 0;
     while i < refs.len() {
-        if refs[i].text.len() > 500 {
+        if refs[i].text.len() > 200 {
             let splits = split_author_date_text(&refs[i].text);
-            if splits.len() >= 3 {
+            if splits.len() >= 2 {
                 let source = refs[i].source;
                 let page = refs[i].page_num;
                 let new_refs: Vec<RawReference> = splits
@@ -508,38 +508,31 @@ fn split_author_date_blobs(refs: &mut Vec<RawReference>) {
 
 /// Match "Surname, I." or "Surname, FirstName" pattern that starts an
 /// author-date reference. Supports:
-/// - Initial format: "Voloshin, M." / "Martínez Torres, A."
+/// - Initial with period: "Voloshin, M." / "Martínez Torres, A."
+/// - Initial without period: "Abe, T," / "Afzal, S " (Rev. Mod. Phys. style)
 /// - Full name format: "Afkhami-Jeddi, Nima" / "Alday, Luis"
 /// Surname part: uppercase + letters/accents/hyphens (no punctuation like .:;[]())
 /// Optional compound surname (up to 2 extra words)
 /// Optional PDF artifact char between comma and initial (tilde from ñ)
 static AUTHOR_START_RE: Lazy<Regex> = Lazy::new(|| {
     Regex::new(
-        r"[A-Z][^\s,.:;\[\]()]+(?:\s[A-Z][^\s,.:;\[\]()]+){0,2}, (?:[^A-Za-z0-9\s]? ?[A-Z]\.|[A-Z][a-z]{2,})",
+        r"[A-Z][^\s,.:;\[\]()]+(?:\s[A-Z][^\s,.:;\[\]()]+){0,2}, (?:[^A-Za-z0-9\s]? ?[A-Z](?:\.|\s|,)|[A-Z][a-z]{2,})",
     )
     .unwrap()
 });
 
-/// Split a blob of concatenated author-date references into individual refs.
-/// Splits at positions where a reference ending precedes "Surname, I." or
-/// "Surname, FirstName". Reference endings: period after non-initial token,
-/// closing bracket/paren, or digit (page number).
-fn split_author_date_text(text: &str) -> Vec<String> {
-    let mut split_positions = Vec::new();
+/// Match "Surname I." pattern (no comma between surname and initial).
+/// Used by some physics review papers (e.g., "Abrahams E.", "Akhmerov A. R.").
+/// Requires surname of 3+ letters to avoid matching journal abbreviations.
+static AUTHOR_START_NOCOMMA_RE: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r"[A-Z][a-z]{2,}(?:[\s-][A-Z][a-z]+)* [A-Z]\.").unwrap()
+});
 
-    for m in AUTHOR_START_RE.find_iter(text) {
-        let author_pos = m.start();
-        if author_pos == 0 {
-            continue;
-        }
-        let before = text[..author_pos].trim_end();
-        if before.is_empty() {
-            continue;
-        }
-        if is_ref_boundary(before) {
-            split_positions.push(author_pos);
-        }
-    }
+/// Split a blob of concatenated author-date references into individual refs.
+/// Splits at positions where a reference ending precedes an author name pattern.
+/// Checks both comma format ("Surname, I.") and no-comma format ("Surname I.").
+fn split_author_date_text(text: &str) -> Vec<String> {
+    let split_positions = find_author_split_positions(text);
 
     if split_positions.is_empty() {
         return vec![text.to_string()];
@@ -561,6 +554,47 @@ fn split_author_date_text(text: &str) -> Vec<String> {
         }
     }
     refs
+}
+
+/// Find positions where a new author-date reference starts, using both
+/// comma-format ("Surname, I.") and no-comma-format ("Surname I.") patterns.
+fn find_author_split_positions(text: &str) -> Vec<usize> {
+    let mut positions: Vec<usize> = Vec::new();
+
+    // Check comma format: "Surname, I." / "Surname, FirstName"
+    for m in AUTHOR_START_RE.find_iter(text) {
+        if let Some(pos) = validate_split_position(text, m.start()) {
+            positions.push(pos);
+        }
+    }
+
+    // Check no-comma format: "Surname I."
+    for m in AUTHOR_START_NOCOMMA_RE.find_iter(text) {
+        if let Some(pos) = validate_split_position(text, m.start()) {
+            if !positions.contains(&pos) {
+                positions.push(pos);
+            }
+        }
+    }
+
+    positions.sort_unstable();
+    positions
+}
+
+/// Validate that a potential author match position is a valid split point.
+fn validate_split_position(text: &str, author_pos: usize) -> Option<usize> {
+    if author_pos == 0 {
+        return None;
+    }
+    let before = text[..author_pos].trim_end();
+    if before.is_empty() {
+        return None;
+    }
+    if is_ref_boundary(before) {
+        Some(author_pos)
+    } else {
+        None
+    }
 }
 
 /// Check if text before a potential split point looks like the end of a reference.
