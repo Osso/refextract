@@ -9,7 +9,7 @@ PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 PDF_DIR="${PROJECT_DIR}/tests/fixtures/pdfs"
 META_DIR="${PROJECT_DIR}/tests/fixtures/metadata"
 RESULTS_DIR="${PROJECT_DIR}/tests/fixtures/results"
-PDFIUM_PATH="${PDFIUM_LIB_PATH:-/usr/local/lib/libpdfium.so}"
+# pdfium path handled by refextract defaults
 
 mkdir -p "$RESULTS_DIR"
 
@@ -46,7 +46,7 @@ for pdf in "${PDF_DIR}"/*.pdf; do
     # Run refextract
     result_file="${RESULTS_DIR}/${basename}.json"
     if [[ ! -f "$result_file" ]]; then
-        if ! "$REFEXTRACT" "$pdf" --pdfium-path "$PDFIUM_PATH" > "$result_file" 2>/dev/null; then
+        if ! "$REFEXTRACT" "$pdf" > "$result_file" 2>/dev/null; then
             echo "ERR  ${basename} (refextract failed)"
             total_errors=$((total_errors + 1))
             rm -f "$result_file"

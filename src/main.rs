@@ -58,15 +58,36 @@ fn main() -> Result<()> {
     print_output(&parsed, cli.pretty)
 }
 
+const DEFAULT_PDFIUM_PATHS: &[&str] = &[
+    "/usr/local/lib/libpdfium.so",
+    "/usr/lib/libpdfium.so",
+    "/usr/local/lib/libpdfium.dylib",
+    "/usr/lib/libpdfium.dylib",
+];
+
 fn bind_pdfium(pdfium_path: &Option<String>) -> Result<Pdfium> {
     let bindings = if let Some(path) = pdfium_path {
         Pdfium::bind_to_library(path)
             .with_context(|| format!("Failed to load pdfium from: {path}"))?
+    } else if let Ok(bindings) = Pdfium::bind_to_system_library() {
+        bindings
     } else {
-        Pdfium::bind_to_system_library()
-            .context("Failed to find pdfium. Install pdfium-binaries or use --pdfium-path")?
+        try_default_pdfium_paths()?
     };
     Ok(Pdfium::new(bindings))
+}
+
+fn try_default_pdfium_paths() -> Result<Box<dyn PdfiumLibraryBindings>> {
+    for path in DEFAULT_PDFIUM_PATHS {
+        if let Ok(bindings) = Pdfium::bind_to_library(path) {
+            return Ok(bindings);
+        }
+    }
+    anyhow::bail!(
+        "Failed to find pdfium. Searched system library path and {:?}. \
+         Use --pdfium-path or set PDFIUM_LIB_PATH.",
+        DEFAULT_PDFIUM_PATHS
+    )
 }
 
 fn build_page_blocks(page_chars: &[types::PageChars]) -> Vec<Vec<types::Block>> {
