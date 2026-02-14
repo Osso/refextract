@@ -29,7 +29,17 @@ fn collect_reference_section(
         for loc in &headings {
             all_blocks.extend(gather_ref_blocks(zoned_pages, loc));
         }
-        return split_into_references(&all_blocks, ReferenceSource::ReferenceSection);
+        let heading_refs = split_into_references(&all_blocks, ReferenceSource::ReferenceSection);
+        // If heading-based collection yielded very few refs, the heading may be
+        // a false positive (e.g., TOC entry). Try the fallback marker scan and
+        // use whichever found more references.
+        if heading_refs.len() < 5 {
+            let fallback = collect_refs_by_markers(zoned_pages);
+            if fallback.len() > heading_refs.len() {
+                return fallback;
+            }
+        }
+        return heading_refs;
     }
     // Fallback: no heading found. Scan all blocks for numbered reference lines.
     collect_refs_by_markers(zoned_pages)

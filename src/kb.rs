@@ -44,8 +44,8 @@ pub static JOURNAL_ABBREVS: Lazy<Vec<(String, String)>> = Lazy::new(|| {
             let normalized = normalize_abbrev(abbrev);
             // Skip short abbreviations — too many false positives
             // e.g., "EN" matches "Witten,", "PR" matches "er," in author names
-            // Require at least 4 chars (e.g., "JHEP", "JCAP", "ZPC " ok, "EN" "PR" not)
-            if normalized.len() < 4 || !seen.insert(normalized.clone()) {
+            // Require at least 3 chars (e.g., "PoS", "JHEP", "JCAP" ok, "EN" "PR" not)
+            if normalized.len() < 3 || !seen.insert(normalized.clone()) {
                 return None;
             }
             Some((normalized, abbrev.to_string()))

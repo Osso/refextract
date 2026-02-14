@@ -89,6 +89,18 @@ fn assign_numeration(window: &[Token], result: &mut ParsedReference) {
                 result.journal_volume = Some(clean.to_string());
                 volume_found = true;
             }
+            // Bare year (no parens) as first token: treat as volume.
+            // Standard format is "Journal Vol, Page (Year)" — the first number
+            // after a journal name is always the volume. JHEP/JCAP use year-based
+            // volumes like "2006" that look like years but are volumes.
+            // Parenthesized years like "(2006)" are clearly year indicators.
+            TokenKind::Year if !volume_found && result.journal_volume.is_none()
+                && !token.text.starts_with('(') =>
+            {
+                let year_text = token.normalized.as_deref().unwrap_or(&token.text);
+                result.journal_volume = Some(year_text.to_string());
+                volume_found = true;
+            }
             TokenKind::Year if result.journal_year.is_none() => {
                 result.journal_year =
                     token.normalized.clone().or(Some(token.text.clone()));
@@ -102,10 +114,19 @@ fn assign_numeration(window: &[Token], result: &mut ParsedReference) {
                 result.journal_page = Some(clean.to_string());
             }
             // Section-letter + digits as volume: "D60", "A534", "B272"
+            // Also conference identifiers: "LAT2005", "LATTICE2019", "HEP2005"
             TokenKind::Word if !volume_found && result.journal_volume.is_none() => {
                 if let Some(vol) = extract_letter_prefixed_number(&token.text) {
                     result.journal_volume = Some(vol);
                     volume_found = true;
+                } else if let Some((vol, page)) = extract_conference_volume(&token.text) {
+                    result.journal_volume = Some(vol);
+                    volume_found = true;
+                    if let Some(p) = page {
+                        if result.journal_page.is_none() {
+                            result.journal_page = Some(p);
+                        }
+                    }
                 }
             }
             // Letter-prefixed page: "B962", "L85", "R183"
@@ -117,6 +138,31 @@ fn assign_numeration(window: &[Token], result: &mut ParsedReference) {
             TokenKind::JournalName | TokenKind::Doi | TokenKind::ArxivId => break,
             _ => {}
         }
+    }
+}
+
+/// Extract conference identifier as volume: "LAT2005" → ("LAT2005", None)
+/// Also handles compound "LAT2006:022" → ("LAT2006", Some("022"))
+/// Requires 2+ uppercase letters followed by 4 digits (year).
+fn extract_conference_volume(text: &str) -> Option<(String, Option<String>)> {
+    let clean = text.trim_matches(|c: char| c == ',' || c == '.' || c == ';');
+    // Check for conference:page compound (e.g., "LAT2006:022")
+    if let Some((conf, page)) = clean.split_once(':') {
+        let letter_count = conf.bytes().take_while(|b| b.is_ascii_uppercase()).count();
+        if letter_count >= 2 && conf.len() == letter_count + 4
+            && conf[letter_count..].chars().all(|c| c.is_ascii_digit())
+            && !page.is_empty() && page.chars().all(|c| c.is_ascii_digit())
+        {
+            return Some((conf.to_string(), Some(page.to_string())));
+        }
+    }
+    let letter_count = clean.bytes().take_while(|b| b.is_ascii_uppercase()).count();
+    if letter_count >= 2 && clean.len() == letter_count + 4
+        && clean[letter_count..].chars().all(|c| c.is_ascii_digit())
+    {
+        Some((clean.to_string(), None))
+    } else {
+        None
     }
 }
 
