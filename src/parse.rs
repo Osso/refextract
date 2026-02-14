@@ -105,6 +105,12 @@ fn assign_numeration(window: &[Token], result: &mut ParsedReference) {
                 result.journal_year =
                     token.normalized.clone().or(Some(token.text.clone()));
             }
+            // PageRange before volume: treat as combined volume (e.g., "904-905")
+            TokenKind::PageRange if !volume_found && result.journal_volume.is_none() => {
+                let clean = token.text.trim_matches(|c: char| !c.is_ascii_alphanumeric() && c != '-' && c != '–');
+                result.journal_volume = Some(clean.to_string());
+                volume_found = true;
+            }
             TokenKind::PageRange if result.journal_page.is_none() => {
                 let clean = token.text.trim_matches(|c: char| !c.is_ascii_alphanumeric() && c != '-' && c != '–');
                 result.journal_page = Some(clean.to_string());
