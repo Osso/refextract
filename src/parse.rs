@@ -106,7 +106,7 @@ fn assign_numeration(window: &[Token], result: &mut ParsedReference) {
                     token.normalized.clone().or(Some(token.text.clone()));
             }
             TokenKind::PageRange if result.journal_page.is_none() => {
-                let clean = token.text.trim_matches(|c: char| !c.is_ascii_digit() && c != '-' && c != '–');
+                let clean = token.text.trim_matches(|c: char| !c.is_ascii_alphanumeric() && c != '-' && c != '–');
                 result.journal_page = Some(clean.to_string());
             }
             TokenKind::Number if volume_found && result.journal_page.is_none() => {

@@ -34,9 +34,14 @@ static VOLUME_YEAR_PAGE_RE: Lazy<Regex> = Lazy::new(|| {
     Regex::new(r"^(\d+)\(((?:19|20)\d{2})\)(\d+(?:\s*[-–—]\s*\d+)?)$").unwrap()
 });
 
-/// Volume:page: "70:094505" or "95:122002"
+/// Volume:page: "70:094505" or "95:122002" or "21:S403–S408"
 static VOLUME_COLON_PAGE_RE: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"^(\d+):(\d+(?:\s*[-–—]\s*\d+)?)$").unwrap());
+    Lazy::new(|| Regex::new(r"^(\d+):([A-Za-z]?\d+(?:\s*[-–—]\s*[A-Za-z]?\d+)?)$").unwrap());
+
+/// Volume(issue):page: "72(2):1346–1349" or "23(21):1704–1706"
+static VOLUME_ISSUE_COLON_PAGE_RE: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r"^(\d+)\(\d+(?:[-–—]\d+)?\):([A-Za-z]?\d+(?:\s*[-–—]\s*[A-Za-z]?\d+)?)$").unwrap()
+});
 
 /// Compact volume(year) without page: "301(1993)"
 static VOLUME_YEAR_RE: Lazy<Regex> =
@@ -372,6 +377,12 @@ fn classify_word(word: &str, tokens: &mut Vec<Token>) {
     if let Some(caps) = VOLUME_YEAR_RE.captures(clean) {
         push_number(tokens, &caps[1]);
         push_year(tokens, &caps[2]);
+        return;
+    }
+    // Volume(issue):page: "72(2):1346–1349" → volume + page
+    if let Some(caps) = VOLUME_ISSUE_COLON_PAGE_RE.captures(clean) {
+        push_number(tokens, &caps[1]);
+        push_page_or_number(tokens, &caps[2]);
         return;
     }
     // Volume with issue number: "82(25)" → emit volume only
