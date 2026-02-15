@@ -193,8 +193,9 @@ fn split_columns(lines: Vec<Line>, page_width: f32) -> Vec<Line> {
 /// Looks for a vertical strip in the middle 30-70% of the page where
 /// no words exist, but words exist on both sides.
 fn detect_column_boundary(lines: &[Line], page_width: f32) -> Option<f32> {
-    // Build histogram of word coverage in x-buckets
-    let n_buckets = 100;
+    // Use 200 buckets (~3pt each on letter paper) to detect narrow column
+    // gaps typical of RevTeX/APS two-column layouts (~10pt gap).
+    let n_buckets = 200;
     let bucket_width = page_width / n_buckets as f32;
     let mut coverage = vec![0u32; n_buckets];
 
@@ -243,8 +244,9 @@ fn find_gap_in_coverage(
         }
     }
 
-    // Gap must be at least 2% of page width
-    if best_gap_len < 2 {
+    // Gap must span at least 1 bucket (~3pt on letter paper).
+    // Typical two-column gaps are 8-15pt (3-5 buckets at 200 resolution).
+    if best_gap_len < 1 {
         return None;
     }
 
