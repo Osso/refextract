@@ -1,15 +1,12 @@
 use once_cell::sync::Lazy;
 use regex::Regex;
 
+use crate::markers::{
+    collect_refs_by_markers, count_markers_in_block, count_markers_in_text, has_any_marker,
+    has_citation_content, score_citation_block, split_into_references,
+};
 use crate::types::{RawReference, ReferenceSource, ZoneKind, ZonedBlock};
 use crate::zones;
-
-/// Line marker patterns: [1], (1), 1., 1) at the start of a line.
-/// Bracketed/paren forms allow up to 4 digits (review papers with 2000+ refs).
-/// Bare-number variants (N./N)) limited to 1-3 digits to avoid matching years like "2024.".
-/// Bare variants also require trailing whitespace/EOL to reject decimals like "0.01".
-static LINE_MARKER_RE: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"^\s*(?:\[(\d{1,4})\]|\((\d{1,4})\)|(\d{1,3})[.\)](?:\s|$))\s*").unwrap());
 
 /// Collect all references from zoned blocks across all pages.
 pub fn collect_references(zoned_pages: &[Vec<ZonedBlock>]) -> Vec<RawReference> {
@@ -92,8 +89,6 @@ fn find_all_reference_headings(zoned_pages: &[Vec<ZonedBlock>]) -> Vec<RefHeadin
 }
 
 /// Verify a heading by checking if blocks after it contain citation-like content.
-/// Works for both numbered ([1] Author...) and unnumbered (Author, Year, ...) refs.
-/// Prevents TOC entries like "1. Introduction" from being mistaken for refs.
 fn has_refs_after(
     zoned_pages: &[Vec<ZonedBlock>],
     page_idx: usize,
@@ -101,8 +96,6 @@ fn has_refs_after(
 ) -> bool {
     let mut checked = 0;
     let mut citation_score = 0;
-    // Check remaining blocks on the same page (up to 15 for two-column layouts
-    // where each line is a separate block)
     for zb in &zoned_pages[page_idx][block_idx + 1..] {
         if zb.zone == ZoneKind::Header || zb.zone == ZoneKind::PageNumber {
             continue;
@@ -116,7 +109,6 @@ fn has_refs_after(
             break;
         }
     }
-    // Check blocks on the next page
     if page_idx + 1 < zoned_pages.len() {
         for zb in &zoned_pages[page_idx + 1] {
             if zb.zone == ZoneKind::Header || zb.zone == ZoneKind::PageNumber {
@@ -135,40 +127,12 @@ fn has_refs_after(
     false
 }
 
-/// Score a block for citation content. Lines with markers + citations score 2,
-/// lines with just citation content score 1.
-fn score_citation_block(block: &crate::types::Block) -> usize {
-    block
-        .lines
-        .iter()
-        .map(|l| {
-            let text = l.text();
-            if let Some(m) = LINE_MARKER_RE.find(&text) {
-                if has_citation_content(&text[m.end()..]) { 2 } else { 0 }
-            } else if has_citation_content(&text) {
-                1
-            } else {
-                0
-            }
-        })
-        .sum()
-}
-
-/// Check if text contains citation-like content (years, journals, arXiv IDs).
-fn has_citation_content(text: &str) -> bool {
-    static CITATION_RE: Lazy<Regex> = Lazy::new(|| {
-        Regex::new(r"(?:(?:19|20)\d{2}|arXiv|hep-|astro-|gr-qc|cond-mat|nucl-|Phys\.|Nucl\.|Lett\.|Rev\.|JHEP|JCAP|doi:|DOI:)").unwrap()
-    });
-    CITATION_RE.is_match(text)
-}
-
 fn gather_ref_blocks(
     zoned_pages: &[Vec<ZonedBlock>],
     loc: &RefHeadingLoc,
 ) -> Vec<(String, usize)> {
     let mut ref_blocks = Vec::new();
 
-    // If heading is embedded within a block, collect remaining lines from that block
     let first_full_block = if let Some(line_idx) = loc.line_idx {
         let zb = &zoned_pages[loc.page_idx][loc.block_idx];
         let remaining = collect_lines_after(zb, line_idx);
@@ -180,25 +144,18 @@ fn gather_ref_blocks(
         loc.block_idx + 1
     };
 
-    // Collect remaining blocks on the same page
     for zb in &zoned_pages[loc.page_idx][first_full_block..] {
         if zb.zone != ZoneKind::Header && zb.zone != ZoneKind::PageNumber {
             ref_blocks.push((zb.block.text(), zb.page_num));
         }
     }
 
-    // Detect marker-based vs author-date format.
-    // Check collected blocks first; if none yet (heading was on its own page),
-    // peek at the next page's blocks to determine marker presence.
     let has_markers = detect_marker_format(&ref_blocks, zoned_pages, loc.page_idx);
-
-    // Collect from subsequent pages
     gather_subsequent_pages(zoned_pages, loc.page_idx, &mut ref_blocks, has_markers);
     ref_blocks
 }
 
-/// Determine if the reference section uses numbered markers ([1], (1), etc.)
-/// by checking collected blocks. If none collected yet, peek at the next page.
+/// Determine if the reference section uses numbered markers.
 fn detect_marker_format(
     ref_blocks: &[(String, usize)],
     zoned_pages: &[Vec<ZonedBlock>],
@@ -207,7 +164,6 @@ fn detect_marker_format(
     if ref_blocks.iter().any(|(text, _)| count_markers_in_text(text) > 0) {
         return true;
     }
-    // Heading was on its own page with no content after it — peek ahead
     if heading_page + 1 < zoned_pages.len() {
         for zb in &zoned_pages[heading_page + 1] {
             if zb.zone == ZoneKind::Header || zb.zone == ZoneKind::PageNumber {
@@ -245,10 +201,6 @@ fn gather_subsequent_pages(
             if zb.zone == ZoneKind::Header || zb.zone == ZoneKind::PageNumber {
                 continue;
             }
-            // Only stop at a heading that is truly a standalone heading
-            // (short block, not containing reference text). Running headers
-            // like "References 765" and heading+content blocks like
-            // "References\n[1] Author..." should be collected, not split on.
             if is_standalone_ref_heading(&zb.block) {
                 ref_blocks.extend(page_blocks_buf);
                 return;
@@ -258,7 +210,6 @@ fn gather_subsequent_pages(
                     page_has_refs = true;
                 }
             } else {
-                // Accumulate citation density across all blocks on the page
                 for line in &zb.block.lines {
                     page_total_lines += 1;
                     if has_citation_content(&line.text()) {
@@ -268,7 +219,6 @@ fn gather_subsequent_pages(
             }
             page_blocks_buf.push((zb.block.text(), zb.page_num));
         }
-        // Author-date mode: check page-level citation density
         if !use_markers && page_citation_lines >= 3
             && page_total_lines > 0
             && page_citation_lines * 2 >= page_total_lines
@@ -283,396 +233,14 @@ fn gather_subsequent_pages(
             if pages_without_refs >= 2 {
                 return;
             }
-            // Allow one page without refs (continuation lines)
             ref_blocks.extend(page_blocks_buf);
         }
     }
 }
 
-/// Fallback: find references by scanning blocks that contain numbered markers.
-/// Collects lines from blocks that have at least one `[N]` marker, skipping
-/// body text blocks between reference columns.
-fn collect_refs_by_markers(
-    zoned_pages: &[Vec<ZonedBlock>],
-) -> Vec<RawReference> {
-    let ref_lines = collect_marker_block_lines(zoned_pages);
-    if ref_lines.is_empty() {
-        return Vec::new();
-    }
-    split_into_references(&ref_lines, ReferenceSource::ReferenceSection)
-}
-
-/// Collect lines from blocks that contain line markers.
-/// Strategy 1: blocks with 3+ markers (dense reference blocks).
-/// Strategy 2: individual marker blocks from the tail of the document.
-fn collect_marker_block_lines(
-    zoned_pages: &[Vec<ZonedBlock>],
-) -> Vec<(String, usize)> {
-    let dense = collect_dense_marker_blocks(zoned_pages);
-    if !dense.is_empty() {
-        return dense;
-    }
-    collect_trailing_marker_blocks(zoned_pages)
-}
-
-/// Blocks with 3+ markers AND citation content — dense reference lists (e.g., two-column layout).
-/// Requires citation content to distinguish from numbered TOC/list entries.
-fn collect_dense_marker_blocks(
-    zoned_pages: &[Vec<ZonedBlock>],
-) -> Vec<(String, usize)> {
-    let mut blocks = Vec::new();
-    for page_blocks in zoned_pages {
-        for zb in page_blocks {
-            if zb.zone == ZoneKind::Header || zb.zone == ZoneKind::PageNumber {
-                continue;
-            }
-            let marker_count = count_markers_in_block(&zb.block);
-            if marker_count >= 3 && score_citation_block(&zb.block) >= 4 {
-                blocks.push((zb.block.text(), zb.page_num));
-            }
-        }
-    }
-    blocks
-}
-
-/// Scan backwards from the end of the document for blocks with markers.
-/// Collects individual marker blocks that form a reference section.
-/// Requires 5+ total markers to avoid false positives from numbered lists.
-/// If a cluster doesn't meet the threshold, resets and keeps scanning.
-fn collect_trailing_marker_blocks(
-    zoned_pages: &[Vec<ZonedBlock>],
-) -> Vec<(String, usize)> {
-    let mut blocks = Vec::new();
-    let mut pages_without_markers = 0;
-
-    for page_blocks in zoned_pages.iter().rev() {
-        let mut page_has_markers = false;
-        let mut page_blocks_collected = Vec::new();
-        for zb in page_blocks {
-            if zb.zone == ZoneKind::Header || zb.zone == ZoneKind::PageNumber {
-                continue;
-            }
-            if has_any_marker(&zb.block) {
-                page_has_markers = true;
-            }
-            page_blocks_collected.push((zb.block.text(), zb.page_num));
-        }
-        if page_has_markers {
-            blocks.extend(page_blocks_collected);
-            pages_without_markers = 0;
-        } else {
-            pages_without_markers += 1;
-            if !blocks.is_empty() && pages_without_markers >= 2 {
-                if is_valid_trailing_cluster(&blocks) {
-                    break;
-                }
-                // Not a valid cluster — reset and keep scanning
-                blocks.clear();
-                pages_without_markers = 0;
-            }
-        }
-    }
-
-    let total_markers: usize = blocks
-        .iter()
-        .map(|(text, _)| count_markers_in_text(text))
-        .sum();
-    if total_markers < 5 {
-        return Vec::new();
-    }
-
-    blocks.reverse();
-    blocks
-}
-
-/// Check if a trailing cluster is a valid reference section:
-/// requires 5+ markers AND citation content in the marker lines.
-fn is_valid_trailing_cluster(blocks: &[(String, usize)]) -> bool {
-    let mut total_markers = 0;
-    let mut citation_lines = 0;
-    for (text, _) in blocks {
-        for line in text.lines() {
-            if LINE_MARKER_RE.is_match(line) {
-                total_markers += 1;
-                let after = LINE_MARKER_RE.replace(line, "");
-                if has_citation_content(after.trim()) {
-                    citation_lines += 1;
-                }
-            }
-        }
-    }
-    total_markers >= 5 && citation_lines >= 3
-}
-
-/// A standalone reference heading: matches "References"/"Bibliography" text
-/// and the block is short (heading only, not heading + reference content).
-/// This distinguishes true section headings from blocks where "References"
-/// is the first line followed by actual reference text.
+/// A standalone reference heading (short block, not heading + content).
 fn is_standalone_ref_heading(block: &crate::types::Block) -> bool {
     zones::is_reference_heading(block) && block.lines.len() <= 2
-}
-
-fn count_markers_in_block(block: &crate::types::Block) -> usize {
-    block
-        .lines
-        .iter()
-        .filter(|l| LINE_MARKER_RE.is_match(&l.text()))
-        .count()
-}
-
-fn has_any_marker(block: &crate::types::Block) -> bool {
-    block
-        .lines
-        .iter()
-        .any(|l| LINE_MARKER_RE.is_match(&l.text()))
-}
-
-fn count_markers_in_text(text: &str) -> usize {
-    text.lines()
-        .filter(|l| LINE_MARKER_RE.is_match(l))
-        .count()
-}
-
-/// Split concatenated text blocks into individual references by line markers.
-fn split_into_references(
-    blocks: &[(String, usize)],
-    source: ReferenceSource,
-) -> Vec<RawReference> {
-    let mut refs = Vec::new();
-    let mut current_text = String::new();
-    let mut current_marker: Option<String> = None;
-    let mut current_page = 0;
-
-    for (text, page_num) in blocks {
-        for line in text.split('\n') {
-            let line = line.trim();
-            if line.is_empty() {
-                continue;
-            }
-            if let Some(caps) = LINE_MARKER_RE.captures(line) {
-                flush_reference(
-                    &mut refs,
-                    &mut current_text,
-                    &current_marker,
-                    current_page,
-                    source,
-                );
-                current_marker = extract_marker(&caps);
-                current_text =
-                    LINE_MARKER_RE.replace(line, "").trim().to_string();
-                current_page = *page_num;
-            } else if !current_text.is_empty() {
-                // Continuation line
-                current_text.push(' ');
-                current_text.push_str(line);
-            } else {
-                // First line without marker
-                current_text = line.to_string();
-                current_page = *page_num;
-            }
-        }
-    }
-    flush_reference(&mut refs, &mut current_text, &current_marker, current_page, source);
-    split_author_date_blobs(&mut refs);
-    refs
-}
-
-/// Post-process: split unmarked refs that are actually concatenated
-/// author-date references (e.g., "Aaij, R., ... [hep-ex]. Abreu, L., ...").
-fn split_author_date_blobs(refs: &mut Vec<RawReference>) {
-    let mut i = 0;
-    while i < refs.len() {
-        if refs[i].text.len() > 200 {
-            let splits = split_author_date_text(&refs[i].text);
-            if splits.len() >= 2 {
-                let source = refs[i].source;
-                let page = refs[i].page_num;
-                let new_refs: Vec<RawReference> = splits
-                    .into_iter()
-                    .map(|t| RawReference {
-                        text: t,
-                        linemarker: None,
-                        source,
-                        page_num: page,
-                    })
-                    .collect();
-                refs.splice(i..i + 1, new_refs);
-                // Don't advance i: re-check from same position
-                // in case the first split part is itself a blob
-                continue;
-            }
-        }
-        i += 1;
-    }
-}
-
-/// Match "Surname, I." or "Surname, FirstName" pattern that starts an
-/// author-date reference. Supports:
-/// - Initial with period: "Voloshin, M." / "Martínez Torres, A."
-/// - Initial without period: "Abe, T," / "Afzal, S " (Rev. Mod. Phys. style)
-/// - Full name format: "Afkhami-Jeddi, Nima" / "Alday, Luis"
-/// Surname part: uppercase + letters/accents/hyphens (no punctuation like .:;[]())
-/// Optional compound surname (up to 2 extra words)
-/// Optional PDF artifact char between comma and initial (tilde from ñ)
-static AUTHOR_START_RE: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(
-        r"[A-Z][^\s,.:;\[\]()]+(?:\s[A-Z][^\s,.:;\[\]()]+){0,2}, (?:[^A-Za-z0-9\s]? ?[A-Z](?:\.|\s|,)|[A-Z][a-z]{2,})",
-    )
-    .unwrap()
-});
-
-/// Match "Surname I." pattern (no comma between surname and initial).
-/// Used by some physics review papers (e.g., "Abrahams E.", "Akhmerov A. R.").
-/// Requires surname of 3+ letters to avoid matching journal abbreviations.
-static AUTHOR_START_NOCOMMA_RE: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"[A-Z][a-z]{2,}(?:[\s-][A-Z][a-z]+)* [A-Z]\.").unwrap()
-});
-
-/// Split a blob of concatenated author-date references into individual refs.
-/// Splits at positions where a reference ending precedes an author name pattern.
-/// Checks both comma format ("Surname, I.") and no-comma format ("Surname I.").
-fn split_author_date_text(text: &str) -> Vec<String> {
-    let split_positions = find_author_split_positions(text);
-
-    if split_positions.is_empty() {
-        return vec![text.to_string()];
-    }
-
-    let mut refs = Vec::new();
-    let mut last = 0;
-    for &pos in &split_positions {
-        let ref_text = text[last..pos].trim().to_string();
-        if !ref_text.is_empty() {
-            refs.push(ref_text);
-        }
-        last = pos;
-    }
-    if last < text.len() {
-        let ref_text = text[last..].trim().to_string();
-        if !ref_text.is_empty() {
-            refs.push(ref_text);
-        }
-    }
-    refs
-}
-
-/// Find positions where a new author-date reference starts, using both
-/// comma-format ("Surname, I.") and no-comma-format ("Surname I.") patterns.
-fn find_author_split_positions(text: &str) -> Vec<usize> {
-    let mut positions: Vec<usize> = Vec::new();
-
-    // Check comma format: "Surname, I." / "Surname, FirstName"
-    for m in AUTHOR_START_RE.find_iter(text) {
-        if let Some(pos) = validate_split_position(text, m.start()) {
-            positions.push(pos);
-        }
-    }
-
-    // Check no-comma format: "Surname I."
-    for m in AUTHOR_START_NOCOMMA_RE.find_iter(text) {
-        if let Some(pos) = validate_split_position(text, m.start()) {
-            if !positions.contains(&pos) {
-                positions.push(pos);
-            }
-        }
-    }
-
-    positions.sort_unstable();
-    positions
-}
-
-/// Validate that a potential author match position is a valid split point.
-fn validate_split_position(text: &str, author_pos: usize) -> Option<usize> {
-    if author_pos == 0 {
-        return None;
-    }
-    let before = text[..author_pos].trim_end();
-    if before.is_empty() {
-        return None;
-    }
-    if is_ref_boundary(before) {
-        Some(author_pos)
-    } else {
-        None
-    }
-}
-
-/// Check if text before a potential split point looks like the end of a reference.
-/// Accepts: period after non-initial, closing bracket/paren, digit (page number).
-fn is_ref_boundary(before: &str) -> bool {
-    let last = match before.chars().last() {
-        Some(c) => c,
-        None => return false,
-    };
-    match last {
-        '.' => is_ref_ending_period(before),
-        ']' | ')' => true,
-        c if c.is_ascii_digit() => true,
-        _ => false,
-    }
-}
-
-/// Check if the period at the end of `before` is a reference-ending period
-/// (not a single-letter initial like "J." or "F.-K.").
-fn is_ref_ending_period(before: &str) -> bool {
-    let without_period = before[..before.len() - 1].trim_end();
-    if without_period.is_empty() {
-        return false;
-    }
-    let last_char = match without_period.chars().last() {
-        Some(c) => c,
-        None => return false,
-    };
-    // Brackets/parens/digits always end refs
-    if matches!(last_char, ']' | ')') || last_char.is_ascii_digit() {
-        return true;
-    }
-    // Get the last whitespace-separated token
-    let last_token = without_period
-        .split_whitespace()
-        .last()
-        .unwrap_or("");
-    // Check if it's an initial or initial compound (e.g., "J", "F.-K")
-    let clean = last_token.trim_end_matches(',');
-    !is_initial_token(clean)
-}
-
-/// Check if a token looks like an author initial: "J", "F.-K", "M", etc.
-fn is_initial_token(token: &str) -> bool {
-    if token.is_empty() {
-        return false;
-    }
-    // Split by hyphens; each part should be a single uppercase letter
-    token.split('-').all(|part| {
-        let trimmed = part.trim_end_matches('.');
-        trimmed.len() == 1 && trimmed.chars().all(|c| c.is_ascii_uppercase())
-    })
-}
-
-fn extract_marker(caps: &regex::Captures) -> Option<String> {
-    caps.get(1)
-        .or_else(|| caps.get(2))
-        .or_else(|| caps.get(3))
-        .map(|m| m.as_str().to_string())
-}
-
-fn flush_reference(
-    refs: &mut Vec<RawReference>,
-    text: &mut String,
-    marker: &Option<String>,
-    page_num: usize,
-    source: ReferenceSource,
-) {
-    let trimmed = text.trim().to_string();
-    if !trimmed.is_empty() {
-        refs.push(RawReference {
-            text: trimmed,
-            linemarker: marker.clone(),
-            source,
-            page_num,
-        });
-    }
-    text.clear();
 }
 
 /// Collect references from footnote zones.
@@ -695,7 +263,6 @@ fn collect_footnote_refs(
     refs
 }
 
-/// Heuristic: does this look like a citation (has year, journal, arXiv, DOI)?
 fn is_citation_like(r: &RawReference) -> bool {
     let t = &r.text;
     has_year_pattern(t) || t.contains("arXiv") || t.contains("doi") || t.contains("DOI")
@@ -707,7 +274,6 @@ fn has_year_pattern(text: &str) -> bool {
     YEAR_RE.is_match(text)
 }
 
-/// Remove footnote refs that duplicate ref-section refs.
 fn dedup_and_merge(
     section_refs: &mut Vec<RawReference>,
     footnote_refs: Vec<RawReference>,
@@ -722,7 +288,6 @@ fn dedup_and_merge(
     }
 }
 
-/// Check if two reference texts are substantially similar.
 fn refs_overlap(a: &str, b: &str) -> bool {
     let a_norm = normalize_for_dedup(a);
     let b_norm = normalize_for_dedup(b);

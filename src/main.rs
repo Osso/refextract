@@ -1,6 +1,7 @@
 mod collect;
 mod kb;
 mod layout;
+mod markers;
 mod parse;
 mod pdf;
 mod tokenizer;
@@ -113,9 +114,9 @@ fn parse_all_references(
 ) -> Vec<ParsedReference> {
     raw_refs
         .iter()
-        .map(|raw| {
+        .flat_map(|raw| {
             let tokens = tokenizer::tokenize(&raw.text);
-            parse::parse_reference(raw, &tokens)
+            parse::parse_references(raw, &tokens)
         })
         .collect()
 }

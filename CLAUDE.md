@@ -48,5 +48,6 @@ https://inspirehep.net/api/literature?q=arxiv:1001.0785&fields=references
 ## Known Limitations
 
 - Journal abbreviation matching: some false positives on short journal names (e.g., "Physics")
+- False positives are NOT acceptable — every false-positive KB entry must be investigated and removed
 - Two-column layout support not yet implemented
 - Footnote citation extraction is basic (heuristic-based)

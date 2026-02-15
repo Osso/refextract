@@ -4244,7 +4244,6 @@ RES LANG COMPUT---Res. Lang. Comput.
 REPRESENT THEOR---Represent. Theor.
 REP PROG IN PHY---Rep. Prog. Phys.
 REND ACC LINCEI---Rend. Lincei
-RADIOPROTECTION---Radioprotection
 RADIOLOGIA MADR---Radiologia Madr.
 QUANT INFO PROC---Quantum Inf. Process.
 Q J MATH OXFORD---Q. J. Math.
@@ -5767,7 +5766,6 @@ BIOCHEMISTRY---Biochem.
 AUTON ROBOTS---Auton. Robots
 AUTOM CONSTR---Autom. Constr.
 ATOMES PARIS---Atomes (Paris)
-ASTROPHYSICS---Astrophysics
 ASTROPH JOUR---Astrophys. J.
 ASTRON NACHR---Astron. Nachr.
 ASTRON LETTS---Astron. Lett.
@@ -5921,7 +5919,6 @@ OPT EXPRESS---Opt. Express
 OPT COM MUN---Opt. Commun.
 ONDE ELECTR---Onde Electr.
 ON INTERNET---On Internet
-OBSERVATORY---Observatory
 NUOVO CIM D---Nuovo Cimento D
 NUOVO CIM C---Nuovo Cimento C
 NUOVO CIM B---Nuovo Cimento B
@@ -5952,7 +5949,6 @@ MON NOT RAS---Mon. Not. R. Astron. Soc.
 MOLEC SIMUL---Mole. Simul.
 MICROCHEM J---Microchem. J.
 METEORITICS---Meteorit. Planet. Sci.
-MEASUREMENT---Measurement
 MATHS STATS---Maths Stats
 MATHEMATIKA---Mathematika
 MATH COMPUT---Math. Comput.
@@ -6070,7 +6066,6 @@ ESSAYS PHYS---Essays Phys.
 ESONE NEWSL---ESONE Newsl.
 EPJDIRECT C---EPJ C Direct
 EPJDIRECT A---EPJ A Direct
-ENGINEERING---Engineering
 ENG TECHNOL---Eng. Technol.
 ENG MANAG J---Eng. Manag. J.
 ELÉMENTAIRE---Elémentaire
@@ -6091,7 +6086,6 @@ CRYOGAS INT---Cryogas Int.
 CONTROL ENG---Control Eng.
 CONTEM MATH---Contemp. Math.
 CONTACT GRD---Contact GRD
-CONSTRAINTS---Constraints
 COMPUT WKLY---Comput. Wkly.
 COMPUT PHYS---Comput. Phys.
 COMPUT NETW---Comput. Netw.
@@ -6107,7 +6101,6 @@ COMPLEX INT---Complex. Int.
 COMMUN NETW---Commun. Netw.
 COLLOQ MATH---Colloq. Math.
 COASTAL ENG---Coastal Eng.
-CIRCULATION---Circulation
 CHIN J PHYS---Chin. J. Phys.
 CHIN ASTRON---Chin. Astron.
 CERN REPORT---CERN Rep.
@@ -6434,7 +6427,6 @@ COMPUT REV---Comput. Rev.
 COMPUT IND---Comput. Ind.
 COMPUT ENG---Comput. Eng.
 COMPT REND---C. R. Acad. Sci. Paris
-COMPOSITES---Composites
 COMP GRAPH---Comput. Graph.
 COMMUN ENG---Commun. Eng.
 COMMUN ALG---Commun. Algebra
@@ -6529,7 +6521,6 @@ SCI CHINA---Sci. China
 ROZPR MAT---Rozpr. Mat.
 RIKEN REV---RIKEN Rev.
 RHIC BULL---RHIC Bull.
-RESONANCE---Resonance
 RES ACCEL---Res. Accel.
 REP THEOR---Represent. Theor.
 RECHERCHE---Recherche
@@ -6588,7 +6579,6 @@ NUO CIM A---Nuovo Cimento A
 NUCL PHYS---Nucl. Phys.
 NUC PHY B---Nucl. Phys. B
 NOUVO CIM---Nuovo Cimento
-NONLINEAR---Nonlinearity
 NNDC NEWS---NNDC Newsl.
 NEWS ICTP---News ICTP
 NEW ASTRO---New Astron.
@@ -6603,7 +6593,6 @@ MON NOT R---Mon. Not. R. Astron. Soc.
 MOL SIMUL---Mole. Simul.
 MICROW RF---Microw. RF
 METALLURG---Metallurgist
-MESSENGER---Messenger
 MECCANICA---Meccanica
 MEAS TECH---Meas. Tech.
 MATH ZEIT---Math. Z.
@@ -6655,7 +6644,6 @@ ISRAEL JM---Isr. J. Math.
 ISA TRANS---ISA Trans.
 ISA NEWSL---ISA Newsl.
 INTERSTAT---InterStat
-INSTITUTE---Institute
 INF ORGAN---Inf. Organ.
 INF MANAG---Inf. Manag.
 INDIAN AT---Indian At.
@@ -6670,7 +6658,6 @@ GPS SOLUT---GPS Solut.
 FUS TECHN---Fusion Technol.
 FUND MATH---Fundam. Math.
 FORT PHYS---Fortschr. Phys.
-FORSCHUNG---Forschung
 FLUID DYN---Fluid Dyn.
 FERMINEWS---FermiNews
 FEBS LETT---FEBS Lett.
@@ -6685,7 +6672,6 @@ ECSL NEWS---ECSL News
 ECON LETT---Econ. Lett.
 E STREAMS---E-STREAMS
 DOKL PHYS---Dokl. Phys.
-DISCOVERY---Discovery
 D LIB MAG---D Lib Mag.
 CURR BIOL---Curr. Biol.
 CRYST ENG---Cryst. Eng.
@@ -6720,7 +6706,6 @@ AUTOMTECH---Autom.tech.
 AT ENERGY---At. Energy
 ASTROPHYS---Astrophysics
 ASTROPH J---Astrophys. J.
-ASTRONOMY---Astronomy
 ASTRONEWS---Astronews.com
 ASTRON ZH---Astron. Zh.
 ASTRO LET---Astron. Lett.
@@ -6822,7 +6807,6 @@ Q J MATH---Q. J. Math.
 Q J ECON---Q. J. Econ.
 PUBLICUS---PUBLICUS
 PTB NEWS---PTB News
-PROTEINS---Proteins
 PROT MET---Prot. Met.
 PROG OPT---Prog. Opt.
 PROC IRE---Proc. IRE
@@ -6858,7 +6842,6 @@ OPER RES---Oper. Res.
 NUOV CIM---Nuovo Cimento
 NUM MATH---Numer. Math.
 NEW ASTR---New Astron.
-NETWORKS---Networks
 NETW MAG---Netw. Mag.
 NAT PHYS---Nat. Phys.
 NANOTECH---Nanotechnology
@@ -6925,14 +6908,12 @@ HADRON J---Hadron. J.
 GRAVITON---Graviton
 GERM RES---Germ. Res.
 GEOM DED---Geom. Dedicata
-GENETICS---Genetics
 GAZ VIDE---Gaz. Vide
 FUS TECH---Fusion Technol.
 FRACTALS---Fractals
 FOLD DES---Fold. Des.
 FIZIKA B---Fizika B
 FIZIKA A---Fizika A
-EXTREMES---Extremes
 EXP PHYS---Exp. Phys.
 EXP MATH---Exp. Math.
 EUROCOMP---Eurocomp
@@ -6941,7 +6922,6 @@ ESTREAMS---E-STREAMS
 ESA BULL---ESA Bull.
 EE TIMES---EE Times
 DOC MATH---Doc. Math.
-DISPLAYS---Displays
 DFN MITT---DFN Mitt.
 DES STUD---Des. Stud.
 DES NEWS---Des. News
@@ -6950,7 +6930,6 @@ CURR SCI---Curr. Sci.
 COSM RES---Cosm. Res.
 CONTRÔLE---Contrôle
 CONTROLE---Contrôle
-COMPUTER---Computer
 COMPUT J---Comput. J.
 COMPOS B---Composites B
 COMPOS A---Composites A
@@ -6995,7 +6974,6 @@ ANN PROB---Ann. Probab.
 ANN PHYS---Ann. Phys.
 ANN MATH---Ann. Math.
 ANN COMB---Ann. Comb.
-ANALYSIS---Analysis
 ADV PHYS---Adv. Phys.
 ADV MATH---Adv. Math.
 ADV GEOM---Adv. Geom.
@@ -7011,7 +6989,6 @@ Z PHY C---Z. Phys. C
 YAD FIZ---Yad. Fiz.
 VIE SCI---Vie Sci.
 VAKTECH---Vak.-Tech.
-UPGRADE---UPGRADE
 UMSCHAU---Umschau
 SURF SC---Surf. Sci.
 SUBNUCL---Subnucl.
@@ -7031,10 +7008,8 @@ RES BUS---Res. Bus.
 REP IBM---Rep. IBM
 RCA REV---RCA Rev.
 PRST AB---Phys. Rev. Spec. Top. Accel. Beams
-PROGRAM---Program
 PRAMANA---Pramana - J. Phys.
 POS LAT---PoS LAT
-POLYMER---Polymer
 PINSA A---Proc. Indian Natl. Sci. Acad., A
 PHYSICA---Physica
 PHYS ZS---Physik. Z.
@@ -7050,7 +7025,6 @@ OPT ENG---Opt. Eng.
 OPT COM---Opt. Commun.
 NUO CIM---Nuovo Cimento
 NUKLEON---Nukleonika
-NUCLEUS---Nucleus
 NOU CIM---Nuovo Cimento
 NEW SCI---New Sci.
 NEW AST---New Astron.
@@ -7099,11 +7073,9 @@ IEE REV---IEE Rev.
 IEE REC---IEE Rev.
 HYP INT---Hyperfine Interact.
 GEOPHYS---Geophys.
-GEOLOGY---Geology
 GEC REV---GEC Rev.
 GAZ FIS---Gaz. Fis.
 FICSA Q---FICSA Q.
-ENTROPY---Entropy
 CENELEC---CENELEC
 CAT ISO---Cat. ISO
 CALPHAD---Calphad
@@ -7115,7 +7087,6 @@ ATLANTI---ATLANTI
 AT DATA---At. Data
 ASTR ZH---Astron. Zh.
 ARK FYS---Ark. Fys.
-ARIADNE---Ariadne
 ARA & A---Annu. Rev. Astron. Astrophys.
 APP OPT---Appl. Opt.
 APJLETT---Astrophys. J. Lett.
@@ -7153,7 +7124,6 @@ PRSTAB---Phys. Rev. Spec. Top. Accel. Beams
 PRLTAO---Phys. Rev. Lett.
 PRBMDO---Phys. Rev. B
 PRAMCI---Pramana - J. Phys.
-PORTAL---Portal
 PLRAAN---Phys. Rev. A
 PISVZH---Pis'ma Zh. Eksp. Teor. Fiz.
 PIPSBD---Proc. Indian Natl. Sci. Acad., A
@@ -7174,19 +7144,16 @@ PANUEO---Phys. At. Nucl.
 OPTIKS---Optiks
 OPLEDP---Opt. Lett.
 OP RES---Op. Res.
-ONLINE---Online
 OE REP---OE Rep.
 OE MAG---OE Mag.
 NUPBBO---Nucl. Phys. B
 NIMBEU---Nucl. Instrum. Methods Phys. Res., B
 NIMAER---Nucl. Instrum. Methods Phys. Res., A
-NEURON---Neuron
 NCIBAW---Nuovo Cimento B
 NATURE---Nature
 NALREP---NALREP
 MSTCEP---Meas. Sci. Technol.
 MN RAS---Mon. Not. R. Astron. Soc.
-MICRON---Micron
 MENUFK---Mex. Nucl.
 MATH Z---Math. Z.
 MATH J---Math. J.
@@ -7248,7 +7215,6 @@ ECON J---Econ. J.
 DSINE6---Documentaliste
 CUSCAM---Curr. Sci. Bangalore
 CSTCEH---Compos. Sci. Technol.
-COMPUT---Computer
 COMP J---Comput. J.
 CARBON---Carbon
 CAIDA5---Comp. Aided Des.
@@ -7264,7 +7230,6 @@ APOBBB---Acta Phys. Pol. B
 APAHAQ---Acta Phys. Hung. New Ser. Heavy Ion Phys.
 AP J S---Astrophys. J. Suppl. Ser.
 AP J L---Astrophys. J. Lett.
-ANALYS---Analysis
 AN FIS---Ann. Fis.
 AMHCAP---Acta Mech.
 AM SCI---Am. Sci.
@@ -7290,7 +7255,6 @@ POLYM---Polymer
 PHY A---Physica A
 PHRVL---Phys. Rev. Lett.
 PHRVD---Phys. Rev. D
-ORDER---Order
 OPTIK---Optik
 NPBPS---Nucl. Phys. B, Proc. Suppl.
 NIMPR---Nucl. Instrum. Methods Phys. Res.
@@ -7334,7 +7298,6 @@ HOPOS---HOPOS
 HEPNP---High Energy Phys. Nucl. Phys.
 G R G---Gen. Relativ. Gravit.
 G FIS---G. Fis.
-FOCUS---Focus
 FIZ B---Fizika B
 FIZ A---Fizika A
 FECAY---Fiz. Elem. Chastits At. Yadra
@@ -7345,7 +7308,6 @@ EPJ B---Eur. Phys. J. B
 EPJ A---Eur. Phys. J. A
 EJPHD---Eur. J. Phys.
 CHAOS---Chaos
-BRAIN---Brain
 BASUP---Bull. Russ. Acad. Sci. Phys.
 ASTRO---Astronomy
 ASPCS---Astron. Soc. Pac. Conf. Proc.
@@ -7368,8 +7330,6 @@ ZHTF---Zh. Tech. Fiz.
 ZETF---Zh. Eksp. Teor. Fiz.
 ZAMM---Z. Angew. Math. Mech.
 YADF---Yad. Fiz.
-WEAR---Wear
-VINE---Vine
 VIDE---Vide
 VDPG---Verhandl. Dtsc. Phys. Ges.
 TPLP---Theory Pract. Logic Program.
@@ -7447,28 +7407,21 @@ IJBC---Int. J. Bifurc. Chaos
 IAUC---Int. Astron. Union Circ.
 I CS---I CS Instrum. Control Syst.
 HADJ---Hadron. J.
-GENE---Gene
-FUEL---Fuel
 EPJE---Eur. Phys. J. E
 EPJD---Eur. Phys. J. D
 EPJC---Eur. Phys. J. C
 EPJB---Eur. Phys. J. B
 EPJA---Eur. Phys. J. A
-ENER---Energy
 EMMS---EMMS
-ECHO---Echo
 DANS---Dokl. Akad. Nauk SSSR
 CZJP---Czechoslov. J. Phys.
-COMP---Computer
 CNPP---Comments Nucl. Part. Phys.
 CJNP---Chin. J. Nucl. Phys.
 CELL---Cell
-BYTE---BYTE
 BRIT---Britannica
 BAPS---Bull. Am. Phys. Soc.
 BAAS---Bull. Am. Astron. Soc.
 AXIS---AXIS
-ATOM---Atom
 ARAA---Annu. Rev. Astron. Astrophys.
 APSS---Appl. Phys. Solids Surf.
 APJS---Astrophys. J. Suppl. Ser.
@@ -7476,7 +7429,6 @@ APJL---Astrophys. J. Lett.
 APAH---Acta Phys. Hung.
 AP J---Astrophys. J.
 ANPL---Ann. Phys. (Leipzig)
-ANAL---Analysis
 AFIS---Ann. Fis.
 ADVP---Adv. Phys.
 A&AL---Astron. Astrophys.
@@ -7663,3 +7615,29 @@ J COSMOLOGY AND ASTROPART PHYS---J. Cosmol. Astropart. Phys.
 J COSMOLOGY AND ASTROPARTICLE PHYS---J. Cosmol. Astropart. Phys.
 JOURNAL COSMOLOGY ASTROPART PHYS---J. Cosmol. Astropart. Phys.
 JOURNAL COSMOLOGY ASTROPARTICLE PHYS---J. Cosmol. Astropart. Phys.
+PHYSICS OF THE DARK UNIVERSE---Phys. Dark Univ.
+PHYS DARK UNIVERSE---Phys. Dark Univ.
+PHYS DARK UNIV---Phys. Dark Univ.
+PRX QUANTUM---PRX Quantum
+PHYSICAL REVIEW X QUANTUM---PRX Quantum
+NPJ QUANTUM INFORMATION---npj Quantum Inf.
+NPJ QUANTUM INF---npj Quantum Inf.
+NPJ QUANT INF---npj Quantum Inf.
+NATURE REVIEWS PHYSICS---Nature Rev. Phys.
+NAT REV PHYS---Nature Rev. Phys.
+NATURE REVIEW PHYSICS---Nature Rev. Phys.
+NATURE PHOTONICS---Nature Photon.
+NAT PHOTONICS---Nature Photon.
+NAT PHOTON---Nature Photon.
+SCIENTIFIC REPORTS---Sci. Rep.
+SCI REPORTS---Sci. Rep.
+SCI REP---Sci. Rep.
+EUROPEAN PHYSICAL JOURNAL PLUS---Eur. Phys. J. Plus
+EUR PHYS J PLUS---Eur. Phys. J. Plus
+EURO PHYS J PLUS---Eur. Phys. J. Plus
+EPJ PLUS---Eur. Phys. J. Plus
+NATURE ASTRONOMY---Nature Astron.
+NAT ASTRONOMY---Nature Astron.
+NAT ASTRON---Nature Astron.
+NUCLEAR AND PARTICLE PHYSICS PROCEEDINGS---Nucl. Part. Phys. Proc.
+NUCL PART PHYS PROC---Nucl. Part. Phys. Proc.

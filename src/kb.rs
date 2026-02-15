@@ -3,6 +3,10 @@ use std::collections::HashMap;
 use once_cell::sync::Lazy;
 use regex::Regex;
 
+// Force recompilation when KB files change (hash set by build.rs).
+#[allow(dead_code)]
+const _KB_HASH: &str = env!("KB_HASH");
+
 static JOURNAL_TITLES_KB: &str = include_str!("../kbs/journal-titles.kb");
 static REPORT_NUMBERS_KB: &str = include_str!("../kbs/report-numbers.kb");
 static COLLABORATIONS_KB: &str = include_str!("../kbs/collaborations.kb");
@@ -338,17 +342,31 @@ fn match_abbrev_journal(suffix: &str) -> Option<(usize, String)> {
 
 /// Check if the match ends at a word boundary.
 /// A boundary exists when: end of string, next char is non-alphanumeric,
-/// or a trailing period was consumed (abbreviation end like "Lett.74").
+/// a trailing period was consumed (abbreviation end like "Lett.74"),
+/// or the match ends with a section letter directly followed by a digit
+/// (e.g., "Chin. Phys. C40" — section letter "C" + volume "40").
 fn is_journal_boundary(suffix: &str, match_len: usize) -> bool {
     if match_len >= suffix.len() {
         return true;
     }
-    if !suffix.as_bytes()[match_len].is_ascii_alphanumeric() {
+    let next = suffix.as_bytes()[match_len];
+    if !next.is_ascii_alphanumeric() {
         return true;
     }
     // Period before match_len means the abbreviation ended with a dot,
     // which is a natural word boundary (e.g., "Lett.74")
-    match_len > 0 && suffix.as_bytes()[match_len - 1] == b'.'
+    if match_len > 0 && suffix.as_bytes()[match_len - 1] == b'.' {
+        return true;
+    }
+    // Section letter followed by digit: "...C40", "...D72", "...A562"
+    // The last matched char is an uppercase letter and next char is a digit.
+    if match_len > 0 && next.is_ascii_digit() {
+        let last = suffix.as_bytes()[match_len - 1];
+        if last.is_ascii_uppercase() {
+            return true;
+        }
+    }
+    false
 }
 
 /// Find how many bytes in the original string correspond to N normalized chars.

@@ -53,6 +53,30 @@ def normalize_journal(title: str) -> str:
     n = n.replace("royal", "r")
     n = n.replace("roy", "r")
     n = n.replace("spectop", "st")
+    n = n.replace("fortschr", "fortsch")
+    n = n.replace("london", "lond")
+    n = n.replace("scripta", "scr")
+    n = n.replace("japan", "jpn")
+    n = n.replace("jap", "jpn")
+    n = n.replace("czechoslov", "czech")
+    n = n.replace("materials", "mater")
+    n = n.replace("concepts", "")
+    n = n.replace("photonics", "photon")
+    n = n.replace("uspekhi", "usp")
+    n = n.replace("statistik", "stat")
+    n = n.replace("statist", "stat")
+    n = n.replace("natl", "nat")
+    n = n.replace("national", "nat")
+    n = n.replace("frontiers", "front")
+    n = n.replace("philos", "phil")
+    n = n.replace("theory", "theor")
+    n = n.replace("interiors", "inter")
+    n = n.replace("molec", "mol")
+    # Strip trailing location/country suffixes
+    for suffix in ("usa", "uk"):
+        if n.endswith(suffix):
+            n = n[:-len(suffix)]
+            break
     # Strip trailing "ser" / "series" (supplement series)
     for suffix in ("series", "ser"):
         if n.endswith(suffix):
@@ -64,6 +88,25 @@ def normalize_journal(title: str) -> str:
         "jcosmolastropartphys": "jcap",
         "nuclinstrummethphysres": "nuclinstrummeth",
         "eurphyslett": "epl",
+        "natmater": "naturemater",
+        "natphys": "naturephys",
+        "nuovcimlett": "lettnuovcim",
+        "nuovcimriv": "rivnuovcim",
+        "annphysleipzig": "annalenphys",
+        "annphysnewyork": "annphys",
+        "highenergyphysnuclphys": "hepnp",
+        "highenergyphysnuclphysbeijing": "hepnp",
+        "ieeetransinftheor": "ieeetransinfotheor",
+        # Soviet → modern journal equivalences
+        "sovphysjetp": "jexptheorphys",
+        "sovphysusp": "physusp",
+        # Full name → abbreviation
+        "progtheorexpphys": "ptep",
+        "procspieintsocopteng": "procspie",
+        # Minor abbreviation differences
+        "jdiffergeom": "jdiffgeom",
+        "jmolecspectrosc": "jmolspectrosc",
+        "pramanajphys": "pramana",
     }
     for full, short in equiv.items():
         if n.startswith(full):
@@ -74,13 +117,29 @@ def normalize_journal(title: str) -> str:
 
 def volumes_match(v1: str, v2: str) -> bool:
     """Flexible volume matching. Handles JCAP/JHEP year-month encoding:
-    extracted "0904" matches INSPIRE "04" (year prefix stripped by INSPIRE)."""
+    extracted "0904" matches INSPIRE "04" (year prefix stripped by INSPIRE).
+    Also handles combined volumes: "904-905" matches "904" or "905"."""
     if v1 == v2:
         return True
     # One may have a year prefix: "0904" ends with "04"
     short, long = (v1, v2) if len(v1) <= len(v2) else (v2, v1)
     if len(short) >= 2 and long.endswith(short) and len(long) - len(short) <= 2:
         return True
+    # Combined volume: "904-905" matches "904" or "905"
+    for sep in ("-", "–", "—"):
+        if sep in v1:
+            parts = v1.split(sep)
+            if v2 in parts:
+                return True
+        if sep in v2:
+            parts = v2.split(sep)
+            if v1 in parts:
+                return True
+    # Alpha-prefixed volume: "LAT2006" matches "2006" (PoS conference codes)
+    if short.isdigit() and not long.isdigit():
+        alpha_stripped = long.lstrip("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz")
+        if alpha_stripped == short:
+            return True
     return False
 
 
@@ -94,11 +153,23 @@ def journals_match(j1: str, j2: str) -> bool:
         return False
     if j1 == j2:
         return True
-    # Prefix match: shorter is prefix of longer, max 3-char diff,
-    # minimum 6-char match to avoid "phys" matching "physrev"
+    # Prefix match: shorter is prefix of longer
     short, long = (j1, j2) if len(j1) <= len(j2) else (j2, j1)
-    if len(short) >= 6 and long.startswith(short) and len(long) - len(short) <= 3:
-        return True
+    if long.startswith(short):
+        diff = len(long) - len(short)
+        # Max 3-char diff, minimum 6-char match to avoid "phys" matching "physrev"
+        if len(short) >= 6 and diff <= 3:
+            return True
+        # Also match sub-journal suffixes: "lett", "suppl"
+        # e.g., "astrophysj" matches "astrophysjlett"
+        tail = long[len(short):]
+        if len(short) >= 8 and tail in ("lett", "suppl", "procsuppl"):
+            return True
+    # Section letter mismatch: physreva vs physrevd (same base, different trailing letter)
+    # INSPIRE sometimes has wrong section letter for Phys.Rev., Int.J.Mod.Phys., etc.
+    if len(j1) == len(j2) and len(j1) >= 8 and j1[:-1] == j2[:-1]:
+        if j1[-1].isalpha() and j2[-1].isalpha():
+            return True
     return False
 
 

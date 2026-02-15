@@ -11,7 +11,7 @@ static ARXIV_NEW_RE: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"\d{4}\.\d{4,5}(?:v\d+)?").unwrap());
 
 static ARXIV_OLD_RE: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"(?:hep|astro|cond|gr|math|nucl|physics|quant|cs|nlin|q-bio|q-fin|stat)(?:[\s-][a-z]{2,3})?[\s/]+\d{7}(?:v\d+)?").unwrap()
+    Regex::new(r"(?:hep|astro|cond|gr|math|nucl|physics|quant|cs|nlin|q-bio|q-fin|stat)(?:[\s.\-][a-z]{2,3})?[\s/]+\d{7}(?:v\d+)?").unwrap()
 });
 
 static URL_RE: Lazy<Regex> =
@@ -144,18 +144,16 @@ fn add_arxiv_old_spans(spans: &mut Vec<Span>, text: &str) {
 }
 
 /// Normalize old-style arXiv ID: "hep ph/0202058" → "hep-ph/0202058"
+/// Also handles dot separators: "math.dg/0412256" → "math-dg/0412256"
 fn normalize_arxiv_old(raw: &str) -> String {
-    // Replace spaces between letters with hyphens, collapse multiple separators
     let mut result = String::new();
     let mut chars = raw.chars().peekable();
     while let Some(c) = chars.next() {
-        if c == ' ' || c == '\t' {
-            // Check if this space is between letter parts (not before digits)
+        if c == ' ' || c == '\t' || c == '.' {
             if chars.peek().is_some_and(|&next| next.is_ascii_alphabetic()) {
                 result.push('-');
-            } else {
-                // Space before slash or digits — skip
             }
+            // Space/dot before slash or digits — skip
         } else {
             result.push(c);
         }

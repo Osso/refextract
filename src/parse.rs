@@ -1,7 +1,10 @@
 use crate::types::{ParsedReference, RawReference, Token, TokenKind};
 
-/// Parse a raw reference into a structured ParsedReference.
-pub fn parse_reference(raw: &RawReference, tokens: &[Token]) -> ParsedReference {
+/// Parse a raw reference into one or more structured ParsedReferences.
+/// When a single reference string contains multiple journal citations
+/// (e.g., "Phys. Rev. D72, 052002. ... Phys. Rev. D72, 052008."),
+/// produce a sub-reference for each additional journal citation.
+pub fn parse_references(raw: &RawReference, tokens: &[Token]) -> Vec<ParsedReference> {
     let mut result = ParsedReference {
         raw_ref: raw.text.clone(),
         linemarker: raw.linemarker.clone(),
@@ -24,7 +27,9 @@ pub fn parse_reference(raw: &RawReference, tokens: &[Token]) -> ParsedReference 
     extract_journal_info(tokens, &mut result);
     extract_authors(tokens, &mut result);
 
-    result
+    let mut refs = vec![result.clone()];
+    refs.extend(extract_sub_references(raw, tokens, &result));
+    refs
 }
 
 fn extract_identifiers(tokens: &[Token], result: &mut ParsedReference) {
@@ -121,10 +126,17 @@ fn assign_numeration(window: &[Token], result: &mut ParsedReference) {
             }
             // Section-letter + digits as volume: "D60", "A534", "B272"
             // Also conference identifiers: "LAT2005", "LATTICE2019", "HEP2005"
+            // Also old-style volumes: "249B" → volume "249", section "B"
             TokenKind::Word if !volume_found && result.journal_volume.is_none() => {
                 if let Some(vol) = extract_letter_prefixed_number(&token.text) {
                     result.journal_volume = Some(vol);
                     volume_found = true;
+                } else if let Some((vol, letter)) =
+                    extract_old_style_volume(&token.text)
+                {
+                    result.journal_volume = Some(vol);
+                    volume_found = true;
+                    append_section_letter(result, letter);
                 } else if let Some((vol, page)) = extract_conference_volume(&token.text) {
                     result.journal_volume = Some(vol);
                     volume_found = true;
@@ -169,6 +181,36 @@ fn extract_conference_volume(text: &str) -> Option<(String, Option<String>)> {
         Some((clean.to_string(), None))
     } else {
         None
+    }
+}
+
+/// Old-style volume with trailing section letter: "249B" → ("249", 'B')
+/// Used in older citations like "Phys. Lett. 249B (1990) 543".
+fn extract_old_style_volume(text: &str) -> Option<(String, char)> {
+    let clean = text.trim_matches(|c: char| c == ',' || c == '.' || c == ';' || c == ':');
+    // Digits followed by a single uppercase letter (A-D for journal sections)
+    if clean.len() >= 2 {
+        let last = *clean.as_bytes().last().unwrap();
+        if matches!(last, b'A' | b'B' | b'C' | b'D')
+            && clean[..clean.len() - 1]
+                .chars()
+                .all(|c| c.is_ascii_digit())
+        {
+            let volume = clean[..clean.len() - 1].to_string();
+            return Some((volume, last as char));
+        }
+    }
+    None
+}
+
+/// Append a section letter to the journal title if it doesn't already have one.
+fn append_section_letter(result: &mut ParsedReference, letter: char) {
+    if let Some(ref title) = result.journal_title {
+        // Only append if journal doesn't already end with a section letter
+        let last = title.as_bytes().last().copied().unwrap_or(0);
+        if !last.is_ascii_uppercase() {
+            result.journal_title = Some(format!("{} {}", title, letter));
+        }
     }
 }
 
@@ -256,4 +298,148 @@ fn extract_between_quotes(text: &str, open: char, close: char) -> Option<String>
     let start = text.find(open)? + open.len_utf8();
     let end = text[start..].find(close)? + start;
     Some(text[start..end].to_string())
+}
+
+/// Extract additional ParsedReferences from subsequent JournalName tokens
+/// and from arXiv IDs not covered by any journal segment.
+///
+/// When a single numbered reference contains multiple citations, each journal
+/// citation and each standalone arXiv ID becomes its own sub-reference.
+/// Identifiers (arXiv, DOI) are assigned by position rather than inherited.
+fn extract_sub_references(
+    raw: &RawReference,
+    tokens: &[Token],
+    primary: &ParsedReference,
+) -> Vec<ParsedReference> {
+    let journal_positions: Vec<usize> = tokens
+        .iter()
+        .enumerate()
+        .filter(|(_, t)| t.kind == TokenKind::JournalName)
+        .map(|(i, _)| i)
+        .collect();
+
+    let mut used_arxiv_positions: Vec<usize> = Vec::new();
+    let mut sub_refs = extract_journal_sub_refs(
+        raw, tokens, primary, &journal_positions, &mut used_arxiv_positions,
+    );
+
+    // Mark the primary's arXiv position as used
+    let primary_seg_end = journal_positions.get(1).copied().unwrap_or(tokens.len());
+    if let Some(pos) = arxiv_position_in_range(tokens, 0, primary_seg_end) {
+        used_arxiv_positions.push(pos);
+    }
+
+    sub_refs.extend(extract_arxiv_only_sub_refs(
+        raw, tokens, primary, &used_arxiv_positions,
+    ));
+    sub_refs
+}
+
+/// Create sub-references for each journal citation after the first.
+fn extract_journal_sub_refs(
+    raw: &RawReference,
+    tokens: &[Token],
+    primary: &ParsedReference,
+    journal_positions: &[usize],
+    used_arxiv: &mut Vec<usize>,
+) -> Vec<ParsedReference> {
+    if journal_positions.len() < 2 {
+        return Vec::new();
+    }
+    let mut sub_refs = Vec::new();
+    for &jpos in &journal_positions[1..] {
+        let next_journal = journal_positions
+            .iter()
+            .find(|&&p| p > jpos)
+            .copied()
+            .unwrap_or(tokens.len());
+
+        if let Some(pos) = arxiv_position_in_range(tokens, jpos, next_journal) {
+            used_arxiv.push(pos);
+        }
+
+        let mut sub = make_sub_ref(raw, primary, &tokens[jpos]);
+        sub.arxiv_id = find_token_in_range(tokens, jpos, next_journal, TokenKind::ArxivId);
+        sub.doi = find_token_in_range(tokens, jpos, next_journal, TokenKind::Doi);
+
+        let window_end = next_journal.min(jpos + 9);
+        assign_numeration(&tokens[jpos + 1..window_end], &mut sub);
+
+        if sub.journal_volume.is_some() {
+            sub_refs.push(sub);
+        }
+    }
+    sub_refs
+}
+
+/// Create sub-references for arXiv IDs not covered by any journal segment.
+fn extract_arxiv_only_sub_refs(
+    raw: &RawReference,
+    tokens: &[Token],
+    primary: &ParsedReference,
+    used_arxiv: &[usize],
+) -> Vec<ParsedReference> {
+    tokens
+        .iter()
+        .enumerate()
+        .filter(|(i, t)| t.kind == TokenKind::ArxivId && !used_arxiv.contains(i))
+        .map(|(_, t)| {
+            let mut sub = make_sub_ref(raw, primary, t);
+            sub.journal_title = None;
+            sub.arxiv_id = Some(t.text.clone());
+            sub.authors = None;
+            sub
+        })
+        .collect()
+}
+
+fn make_sub_ref(
+    raw: &RawReference,
+    primary: &ParsedReference,
+    journal_token: &Token,
+) -> ParsedReference {
+    ParsedReference {
+        raw_ref: raw.text.clone(),
+        linemarker: raw.linemarker.clone(),
+        authors: primary.authors.clone(),
+        title: None,
+        journal_title: journal_token
+            .normalized
+            .clone()
+            .or_else(|| Some(journal_token.text.clone())),
+        journal_volume: None,
+        journal_year: None,
+        journal_page: None,
+        doi: None,
+        arxiv_id: None,
+        isbn: None,
+        report_number: None,
+        url: None,
+        collaboration: primary.collaboration.clone(),
+        source: raw.source,
+    }
+}
+
+fn find_token_in_range(
+    tokens: &[Token],
+    start: usize,
+    end: usize,
+    kind: TokenKind,
+) -> Option<String> {
+    tokens[start..end]
+        .iter()
+        .find(|t| t.kind == kind)
+        .map(|t| t.text.clone())
+}
+
+fn arxiv_position_in_range(
+    tokens: &[Token],
+    start: usize,
+    end: usize,
+) -> Option<usize> {
+    tokens[start..end]
+        .iter()
+        .enumerate()
+        .find(|(_, t)| t.kind == TokenKind::ArxivId)
+        .map(|(i, _)| start + i)
 }
