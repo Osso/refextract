@@ -9,7 +9,6 @@ PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 PDF_DIR="${PROJECT_DIR}/tests/fixtures/pdfs"
 META_DIR="${PROJECT_DIR}/tests/fixtures/metadata"
 RESULTS_DIR="${PROJECT_DIR}/tests/fixtures/results"
-# pdfium path handled by refextract defaults
 
 mkdir -p "$RESULTS_DIR"
 
@@ -20,6 +19,58 @@ echo "Building refextract..."
 cargo build --release --manifest-path="${PROJECT_DIR}/Cargo.toml" 2>&1 | tail -1
 REFEXTRACT="${PROJECT_DIR}/target/release/refextract"
 
+# Collect PDFs that need (re-)extraction and the full list for comparison
+stale_pdfs=()
+all_basenames=()
+for pdf in "$PDF_DIR"/*.pdf; do
+    basename=$(basename "$pdf" .pdf)
+    meta="${META_DIR}/${basename}.json"
+    [[ ! -f "$meta" ]] && continue
+
+    all_basenames+=("$basename")
+    if (( LIMIT > 0 && ${#all_basenames[@]} > LIMIT )); then
+        unset 'all_basenames[-1]'
+        break
+    fi
+
+    result_file="${RESULTS_DIR}/${basename}.json"
+    if [[ ! -f "$result_file" ]] || [[ "$REFEXTRACT" -nt "$result_file" ]]; then
+        stale_pdfs+=("$pdf")
+    fi
+done
+
+# Batch extract stale PDFs in one invocation
+extract_errors=0
+total_stale=${#stale_pdfs[@]}
+if (( total_stale > 0 )); then
+    echo "Extracting ${total_stale} papers..."
+    extract_errors=$("$REFEXTRACT" --no-doi-lookup "${stale_pdfs[@]}" 2>/dev/null | python3 -c "
+import json, sys, os
+
+results_dir = sys.argv[1]
+errors = 0
+for line in sys.stdin:
+    line = line.strip()
+    if not line:
+        continue
+    d = json.loads(line)
+    basename = os.path.splitext(os.path.basename(d['file']))[0]
+    result_file = os.path.join(results_dir, basename + '.json')
+    if d.get('error'):
+        print(f'ERR  {basename} (refextract failed)', file=sys.stderr)
+        errors += 1
+        try:
+            os.unlink(result_file)
+        except FileNotFoundError:
+            pass
+    else:
+        with open(result_file, 'w') as f:
+            json.dump(d['references'], f)
+print(errors)
+" "$RESULTS_DIR")
+    echo ""
+fi
+
 echo "Evaluating against INSPIRE ground truth..."
 echo ""
 
@@ -29,29 +80,15 @@ total_extracted_refs=0
 total_matched_arxiv=0
 total_matched_journal=0
 total_matched_doi=0
-total_errors=0
+total_errors=$extract_errors
 
-for pdf in "${PDF_DIR}"/*.pdf; do
-    basename=$(basename "$pdf" .pdf)
+for basename in "${all_basenames[@]}"; do
+    result_file="${RESULTS_DIR}/${basename}.json"
     meta="${META_DIR}/${basename}.json"
 
-    if [[ ! -f "$meta" ]]; then
+    if [[ ! -f "$result_file" ]]; then
+        total_errors=$((total_errors + 1))
         continue
-    fi
-
-    if (( LIMIT > 0 && total_papers >= LIMIT )); then
-        break
-    fi
-
-    # Run refextract (re-run if binary is newer than cached result)
-    result_file="${RESULTS_DIR}/${basename}.json"
-    if [[ ! -f "$result_file" ]] || [[ "$REFEXTRACT" -nt "$result_file" ]]; then
-        if ! "$REFEXTRACT" --no-doi-lookup "$pdf" > "$result_file" 2>/dev/null; then
-            echo "ERR  ${basename} (refextract failed)"
-            total_errors=$((total_errors + 1))
-            rm -f "$result_file"
-            continue
-        fi
     fi
 
     # Compare with INSPIRE
@@ -79,7 +116,6 @@ for pdf in "${PDF_DIR}"/*.pdf; do
     fi
     printf "%-30s inspire=%3d  extracted=%3d  matched(a=%d j=%d d=%d)  recall=%d%%\n" \
         "$basename" "$i_count" "$e_count" "$m_arxiv" "$m_journal" "$m_doi" "$recall"
-
 done
 
 echo ""
