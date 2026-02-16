@@ -1,13 +1,20 @@
 # refextract Brief - 2026-02-16
 
 ## Active Tasks
-- [ ] Two-column layout support (~1,300 refs from 17 zero-extraction papers) — Several high-impact papers (1204.4325, 2004.03543, 1710.01833) have interleaved text from adjacent columns, garbling extracted references. Biggest structural challenge.
 - [ ] Various per-paper layout failures — Unnumbered sections, no heading found, chapter-end refs. Each affects 1-5 papers.
 - [ ] Image-based PDFs — ~10 old papers. pdfium extracts 0-32 blocks (chart labels only). Unsolvable without OCR.
 - [ ] INSPIRE metadata gaps — 2103.01183 (951 missed: DOI-only), 2006.11237 (118: DOI-only), 1905.08669 (112: DOI-only), 1003.3928 (121 refs: empty metadata). Comparison methodology issue, not extraction bug.
 - [ ] Context-aware journal validation — Words like `Physics`, `Energy`, `Science` in titles matching as journal names from KB. Need volume/year proximity check to filter false positives.
 
-## Progress This Session (90.1% → 90.4%)
+## Progress This Session (90.4% → 90.4%)
+- **Two-column layout investigation**: Investigated character-level column reordering for two-column papers. Found that pdfium does NOT interleave characters between columns — chars arrive per-column (left then right) with only 1-2 column switches per page. The existing `split_columns` at the line level already handles this correctly.
+- **Backward-jump word break**: Added safety check in `group_chars_into_words` that breaks a word when the next character's right edge is to the left of the word's start x-position. Prevents corrupted words from occasional backward x-jumps. +5 matches.
+- **Column reorder rejected**: Character-level reorder (`reorder_for_columns` + `detect_char_column_boundary`) was implemented, tested, and removed — it caused -12 net regressions by disrupting block boundaries on papers where reference sections span both columns.
+- **Root cause of "two-column" zero-extraction papers**: 0704.3011 (575 refs), 0802.0007 (122), 0711.3596 (55) — pdfium extracts only spaces from reference pages (Type3 fonts or outlined text). This is a text extraction limitation, not a layout issue. No layout fix can help.
+- **Refactored `group_chars_into_words`** to accept `&[PdfChar]` instead of `&PageChars` for flexibility.
+- **Net gain**: 123,795 → 123,800 (+5 matches, 90.4%)
+
+## Previous Session (90.1% → 90.4%)
 - **Ibid/erratum sub-reference extraction**: Recognize `[Erratum-ibid, V, P (Y)]` and `ibid., V, P (Y)` patterns as sub-references inheriting the primary's journal title. Extended tokenizer to match `Erratum-ibid`, `Addendum-ibid`, `Erratum:ibid` as Ibid tokens. +43 matches.
 - **Bracket trimming in tokenizer**: Added `[` and `]` to `classify_word` trim set, fixing year detection in `(2012)].` patterns where trailing `]` broke year regex matching.
 - **Nature journal KB fixes**: Changed `Nature Nanotechnology` → `Nature Nanotech.` to match INSPIRE abbreviation. Fixed duplicate `NATURE PHOTONICS` entry (had both `Nature Photonics` and `Nature Photon.` outputs).
@@ -60,30 +67,30 @@
 ```
 Papers evaluated:     1,000 (0 errors)
 INSPIRE refs total:   136,982
-Extracted refs total: 162,711
+Extracted refs total: 162,705
 Matched by arXiv ID:  69,541 (51%)
-Matched by journal:   51,833 (38%)
+Matched by journal:   51,838 (38%)
 Matched by DOI:        2,421 (2%)
-Total matched:        123,795 / 136,982 (90.4%)
+Total matched:        123,800 / 136,982 (90.4%)
 ```
-Previous: 123,702. +93 from ibid extraction, KB fixes, comparison equivalences.
+Previous: 123,795. +5 from backward-jump word break.
 
 ## Top 15 Missed Papers (at 90.1% recall)
 ```
 Rank  Paper            INSPIRE  Matched  Missed  Recall%  Category
 1     2103.01183          1036       85     951     8%  INSPIRE DOI-only metadata
-2     0704.3011            575        0     575     0%  No ref heading found
+2     0704.3011            575        0     575     0%  pdfium extracts only spaces
 3     hep-ph_9506380       421        0     421     0%  Image-based PDF
 4     1206.2913            950      654     296    68%  No identifiers (292/296)
 5     1909.12524          1636     1342     294    82%  DOI-only in INSPIRE
-6     1204.4325            441      179     262    40%  Two-column interleaving
+6     1204.4325            441      179     262    40%  Parsing gaps (layout OK)
 7     2204.03381           635      419     216    65%  No identifiers + DOI-only
 8     hep-ph_0503172      1205     1008     197    83%  Matching gap (184 no_id)
 9     2103.05419          1780     1600     180    89%  Matching gap (165 no_id)
 10    1112.2853            483      309     174    63%  No identifiers (165/174)
 11    hep-ph_9306320       164        0     164     0%  Image-based PDF
 12    1406.6311           1783     1630     153    91%  Extraction gap (improved)
-13    0802.0007            122        0     122     0%  Two-column interleaving
+13    0802.0007            122        0     122     0%  pdfium extracts only spaces
 14    1003.3928            121        0     121     0%  INSPIRE metadata empty
 15    1902.00134          1051      932     119    88%  Matching gap (118 no_id)
 ```
@@ -98,7 +105,7 @@ Rank  Paper            INSPIRE  Matched  Missed  Recall%  Category
 - **Theoretical ceiling** (~94.7%): Only 424 refs are genuinely fixable through extraction improvements.
 
 ## 0-Recall Paper Categories (14 papers with >10 INSPIRE refs)
-1. **Two-column interleaving** (3 papers): 0704.3011 (575 refs), 0802.0007 (122), 0711.3596 (55). pdfium interleaves columns, garbling text. Text IS extractable (pdftotext works).
+1. **pdfium text extraction failure** (3 papers): 0704.3011 (575 refs), 0802.0007 (122), 0711.3596 (55). pdfium extracts only spaces from reference pages (Type3 fonts or outlined text). Characters are NOT interleaved — they arrive per-column. The layout pipeline handles two-column correctly via `split_columns`. Unsolvable without alternative text extraction (e.g., poppler/pdftotext).
 2. **Image-based/Type3 font PDFs** (~7 papers): hep-ph_9506380, hep-ph_9306320, hep-th_9411108, hep-ph_9903282, hep-ph_9507378, hep-lat_9605038, hep-lat_9609035, hep-lat_9309005, hep-lat_9310022, hep-lat_9308011. pdfium extracts <10 blocks from 30-50 page papers. Unsolvable without OCR.
 3. **INSPIRE metadata empty** (2 papers): 1003.3928 (121 refs), 1310.7534 (35 refs). Extraction works, nothing to match against.
 4. **Other** (2 papers): hep-ex_0012035 (12 refs), 1102.1523 (4 refs).
@@ -133,6 +140,8 @@ Rank  Paper            INSPIRE  Matched  Missed  Recall%  Category
 - **Bibliography label splitting**: `find_biblio_label_positions` detects "Surname et al. YYYY:" patterns as split positions in author-year blobs. Scans backward from year-colon to find label start, validates with `is_ref_boundary`. Handles hyphenated names, "et al.", connectors (and/de/von).
 - **Running header tolerance**: `gather_subsequent_pages` no longer stops at standalone "References" headings. Instead sets `saw_heading` flag and only stops if the page also has ref content (marker-based or citation density). Prevents false stop on running headers at top of appendix pages.
 - **Extended heading verification**: `has_refs_after` checks up to 3 subsequent pages (not just 1) with per-page 15-block limit. Handles appendix pages between heading and ref continuation.
+- **No character-level column reorder**: pdfium delivers chars per-column (left then right, 1-2 switches per page), NOT interleaved. Character reordering was tested and caused -12 net regressions by disrupting reference section block boundaries. The existing `split_columns` at line level is sufficient.
+- **Backward-jump word break**: Break word when `(ch.x + ch.width) < acc.x` — the new char's right edge is left of the word start. Protects against occasional backward x-jumps without false positives on subscripts.
 
 ## Performance Profile
 Per-paper timing (1303.4571, 104 pages):
@@ -181,11 +190,11 @@ Per-paper timing (1303.4571, 104 pages):
 - `65b1a65` — Initial implementation of layout-aware HEP reference extractor
 
 ## Next Steps (by estimated impact)
-1. **Two-column layout support** (~750 refs from 3 text-extractable zero-extraction papers: 0704.3011, 0802.0007, 0711.3596) — pdfium interleaves columns. Need column deinterleaving in layout.rs. Also affects 1204.4325 (262 missed, 40% recall). **Biggest remaining win.**
+1. **Alternative text extraction for Type3/outlined PDFs** (~750 refs from 0704.3011, 0802.0007, 0711.3596) — pdfium returns only spaces from reference pages. Could try poppler/pdftotext as fallback when pdfium yields empty pages. **Biggest remaining win**, but requires new dependency.
 2. **Cross-reference ibid resolution** (~8 refs) — Ibid in separate raw_ref (split by `;`) doesn't inherit journal from prior raw_ref with same linemarker. Low impact.
 3. **Batch mode** to amortize KB init cost (~500ms per invocation)
 4. **Prefix trie** for report number matching (skip most patterns without regex)
-5. **Note**: Only 424 of 13,187 unmatched refs are genuinely fixable. Diminishing returns beyond two-column support.
+5. **Note**: Only 424 of 13,187 unmatched refs are genuinely fixable. Diminishing returns ahead.
 
 ## Technical Context
 

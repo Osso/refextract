@@ -9,7 +9,7 @@ pub fn group_page(page: &PageChars) -> Vec<Block> {
     let avg_char_width = compute_avg_char_width(page);
     let dominant_font_size = compute_dominant_font_size(page);
 
-    let words = group_chars_into_words(page, avg_char_width, dominant_font_size);
+    let words = group_chars_into_words(&page.chars, avg_char_width, dominant_font_size);
     let lines = group_words_into_lines(&words);
     let lines = split_columns(lines, page.width);
     group_lines_into_blocks(&lines)
@@ -94,7 +94,7 @@ impl WordAccum {
 }
 
 fn group_chars_into_words(
-    page: &PageChars,
+    chars: &[crate::types::PdfChar],
     avg_char_width: f32,
     dominant_font_size: f32,
 ) -> Vec<Word> {
@@ -102,10 +102,12 @@ fn group_chars_into_words(
     let gap_threshold = avg_char_width * 0.3;
     let mut acc = WordAccum::new();
 
-    for (i, ch) in page.chars.iter().enumerate() {
+    for (i, ch) in chars.iter().enumerate() {
+        let backward_jump = !acc.text.is_empty() && (ch.x + ch.width) < acc.x;
         let is_break = i == 0
             || ch.ch == ' '
             || (ch.x - acc.prev_right) > gap_threshold
+            || backward_jump
             || (ch.y - acc.y).abs() > dominant_font_size * 0.5;
 
         if ch.ch == ' ' {
