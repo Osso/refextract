@@ -1,4 +1,5 @@
 mod collect;
+mod doi;
 mod kb;
 mod layout;
 mod markers;
@@ -34,6 +35,10 @@ struct Cli {
     #[arg(long)]
     no_footnotes: bool,
 
+    /// Skip DOI lookup via CrossRef
+    #[arg(long)]
+    no_doi_lookup: bool,
+
     /// Override pdfium library path
     #[arg(long, env = "PDFIUM_LIB_PATH")]
     pdfium_path: Option<String>,
@@ -55,7 +60,11 @@ fn main() -> Result<()> {
 
     let raw_refs = collect::collect_references(&zoned_pages);
     let raw_refs = split_semicolon_subrefs(raw_refs);
-    let parsed = parse_all_references(&raw_refs);
+    let mut parsed = parse_all_references(&raw_refs);
+    if !cli.no_doi_lookup {
+        let cache = doi::DoiCache::open()?;
+        doi::enrich_dois(&mut parsed, &cache);
+    }
     print_output(&parsed, cli.pretty)
 }
 
