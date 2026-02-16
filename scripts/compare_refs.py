@@ -120,6 +120,17 @@ def normalize_journal(title: str) -> str:
         "physscrtopissues": "physscrt",
         # Naturwissenschaften full name → abbreviation
         "naturwissenschaften": "naturwiss",
+        # Annalen der Physik (Berlin) ←→ Ann. Phys. (used interchangeably in citations)
+        "annalenphys": "annphys",
+        # Comptes Rendus Physique full name → abbreviation
+        "comptesrendusphysique": "crphys",
+        # Chinese Physics C / Chinese Journal of Physics C (same journal, renamed)
+        "chinjphysc": "chinphysc",
+        # Grav. Cosmol. abbreviation variants
+        "gravitcosmol": "gravcosmol",
+        # Eur. Phys. J. truncated to Phys. J. (line break in PDF)
+        "physjc": "eurphysjc",
+        "physja": "eurphysja",
     }
     for full, short in equiv.items():
         if n.startswith(full):
@@ -185,8 +196,13 @@ def journals_match(j1: str, j2: str) -> bool:
         # Also match sub-journal suffixes: "lett", "suppl"
         # e.g., "astrophysj" matches "astrophysjlett"
         tail = long[len(short):]
-        if len(short) >= 8 and tail in ("lett", "suppl", "procsuppl"):
+        if len(short) >= 8 and tail in ("lett", "suppl", "supp", "procsuppl"):
             return True
+        # Section letter + suffix: "nuclphys" matches "nuclphysbprocsuppl"
+        if len(short) >= 7 and len(tail) >= 2 and tail[0].isalpha():
+            rest = tail[1:]  # strip section letter
+            if rest in ("procsuppl", "procsup"):
+                return True
     # Section letter mismatch: physreva vs physrevd (same base, different trailing letter)
     # INSPIRE sometimes has wrong section letter for Phys.Rev., Int.J.Mod.Phys., etc.
     if len(j1) == len(j2) and len(j1) >= 8 and j1[:-1] == j2[:-1]:
