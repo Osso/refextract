@@ -73,6 +73,8 @@ def normalize_journal(title: str) -> str:
     n = n.replace("interiors", "inter")
     n = n.replace("molec", "mol")
     n = n.replace("cambridge", "camb")
+    n = n.replace("nuclear", "nucl")
+    n = n.replace("physics", "phys")
     # Strip trailing location/country suffixes
     for suffix in ("usa", "uk"):
         if n.endswith(suffix):

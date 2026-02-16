@@ -43,9 +43,9 @@ for pdf in "${PDF_DIR}"/*.pdf; do
         break
     fi
 
-    # Run refextract
+    # Run refextract (re-run if binary is newer than cached result)
     result_file="${RESULTS_DIR}/${basename}.json"
-    if [[ ! -f "$result_file" ]]; then
+    if [[ ! -f "$result_file" ]] || [[ "$REFEXTRACT" -nt "$result_file" ]]; then
         if ! "$REFEXTRACT" "$pdf" > "$result_file" 2>/dev/null; then
             echo "ERR  ${basename} (refextract failed)"
             total_errors=$((total_errors + 1))

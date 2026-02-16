@@ -102,8 +102,7 @@ fn collect_dense_marker_blocks(
             if zb.zone == ZoneKind::Header || zb.zone == ZoneKind::PageNumber {
                 continue;
             }
-            let marker_count = count_markers_in_block(&zb.block);
-            if marker_count >= 3 && score_citation_block(&zb.block) >= 4 {
+            if is_dense_ref_block(&zb.block) {
                 blocks.push((zb.block.text(), zb.page_num));
             }
         }
@@ -111,16 +110,43 @@ fn collect_dense_marker_blocks(
     blocks
 }
 
+/// A block qualifies as a dense reference block if it has enough markers
+/// and citation content. For author-date papers, lines rarely start with
+/// `(year)` so we also accept blocks with very high citation density.
+fn is_dense_ref_block(block: &crate::types::Block) -> bool {
+    let marker_count = count_markers_in_block(block);
+    let cite_score = score_citation_block(block);
+    // Standard: 3+ markers with citation content
+    if marker_count >= 3 && cite_score >= 4 {
+        return true;
+    }
+    // High citation density: accept blocks where >= 60% of lines
+    // are citations and at least 20 citation lines present.
+    // This captures author-date reference blocks that lack line markers.
+    let total_lines = block.lines.len();
+    let cite_lines = block
+        .lines
+        .iter()
+        .filter(|l| has_citation_content(&l.text()))
+        .count();
+    cite_lines >= 20 && total_lines > 0 && cite_lines * 5 >= total_lines * 3
+    // 60% threshold: cite_lines / total >= 3/5
+}
+
 /// Scan backwards from the end of the document for blocks with markers.
 /// Requires 5+ total markers to avoid false positives from numbered lists.
+/// Also uses citation content density to fill gaps between marker pages
+/// (handles author-date papers where lines rarely start with `(year)`).
 fn collect_trailing_marker_blocks(
     zoned_pages: &[Vec<ZonedBlock>],
 ) -> Vec<(String, usize)> {
     let mut blocks = Vec::new();
-    let mut pages_without_markers = 0;
+    let mut pages_without_refs = 0;
 
     for page_blocks in zoned_pages.iter().rev() {
         let mut page_has_markers = false;
+        let mut page_citation_lines = 0;
+        let mut page_total_lines = 0;
         let mut page_blocks_collected = Vec::new();
         for zb in page_blocks {
             if zb.zone == ZoneKind::Header || zb.zone == ZoneKind::PageNumber {
@@ -129,19 +155,32 @@ fn collect_trailing_marker_blocks(
             if has_any_marker(&zb.block) {
                 page_has_markers = true;
             }
+            for line in &zb.block.lines {
+                page_total_lines += 1;
+                if has_citation_content(&line.text()) {
+                    page_citation_lines += 1;
+                }
+            }
             page_blocks_collected.push((zb.block.text(), zb.page_num));
         }
-        if page_has_markers {
+        // A page has refs if it has markers, OR if it has high citation
+        // density and we've already found some ref pages (gap-filling).
+        let has_citation_density = page_citation_lines >= 3
+            && page_total_lines > 0
+            && page_citation_lines * 2 >= page_total_lines;
+        let page_has_refs =
+            page_has_markers || (!blocks.is_empty() && has_citation_density);
+        if page_has_refs {
             blocks.extend(page_blocks_collected);
-            pages_without_markers = 0;
+            pages_without_refs = 0;
         } else {
-            pages_without_markers += 1;
-            if !blocks.is_empty() && pages_without_markers >= 2 {
+            pages_without_refs += 1;
+            if !blocks.is_empty() && pages_without_refs >= 2 {
                 if is_valid_trailing_cluster(&blocks) {
                     break;
                 }
                 blocks.clear();
-                pages_without_markers = 0;
+                pages_without_refs = 0;
             }
         }
     }
