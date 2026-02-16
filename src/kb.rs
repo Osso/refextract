@@ -64,7 +64,7 @@ pub static JOURNAL_ABBREVS: Lazy<Vec<(String, String)>> = Lazy::new(|| {
 /// "Phys.Rev.D" → "PHYS REV D"  (dots act as word separators)
 fn normalize_abbrev(s: &str) -> String {
     s.chars()
-        .map(|c| if c == '.' { ' ' } else { c })
+        .map(|c| if c == '.' || c == ':' { ' ' } else { c })
         .collect::<String>()
         .split_whitespace()
         .collect::<Vec<_>>()
@@ -370,7 +370,7 @@ fn is_journal_boundary(suffix: &str, match_len: usize) -> bool {
 }
 
 /// Find how many bytes in the original string correspond to N normalized chars.
-/// Normalized form treats dots and whitespace as word separators,
+/// Normalized form treats dots, colons, and whitespace as word separators,
 /// collapsing consecutive separators to a single space.
 fn find_original_byte_len(original: &str, norm_len: usize) -> usize {
     let mut norm_pos = 0;
@@ -379,13 +379,13 @@ fn find_original_byte_len(original: &str, norm_len: usize) -> usize {
 
     while orig_pos < bytes.len() && norm_pos < norm_len {
         let ch = bytes[orig_pos];
-        // Dots and whitespace are word separators; normalize to single space
-        if ch == b'.' || ch == b' ' || ch == b'\t' {
+        // Dots, colons, and whitespace are word separators; normalize to single space
+        if ch == b'.' || ch == b':' || ch == b' ' || ch == b'\t' {
             if norm_pos > 0 {
                 norm_pos += 1;
             }
             while orig_pos < bytes.len()
-                && (bytes[orig_pos] == b'.' || bytes[orig_pos] == b' ' || bytes[orig_pos] == b'\t')
+                && matches!(bytes[orig_pos], b'.' | b':' | b' ' | b'\t')
             {
                 orig_pos += 1;
             }
