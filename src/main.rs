@@ -9,19 +9,20 @@ mod tokenizer;
 mod types;
 mod zones;
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 use clap::Parser;
 use pdfium_render::prelude::*;
+use serde::Serialize;
 
 use types::ParsedReference;
 
 #[derive(Parser)]
 #[command(name = "refextract", about = "Extract references from HEP papers")]
 struct Cli {
-    /// PDF file to process
-    file: PathBuf,
+    /// PDF file(s) to process
+    files: Vec<PathBuf>,
 
     /// Pretty-print JSON output
     #[arg(long)]
@@ -44,28 +45,92 @@ struct Cli {
     pdfium_path: Option<String>,
 }
 
+#[derive(Serialize)]
+struct BatchResult {
+    file: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    references: Option<Vec<ParsedReference>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    error: Option<String>,
+}
+
 fn main() -> Result<()> {
     let cli = Cli::parse();
+    if cli.files.is_empty() {
+        anyhow::bail!("No input files specified");
+    }
     let pdfium = bind_pdfium(&cli.pdfium_path)?;
-    let page_chars = pdf::extract_chars(&pdfium, &cli.file)?;
+    let batch = cli.files.len() > 1;
 
-    let all_blocks = build_page_blocks(&page_chars);
-    let body_font_size = zones::compute_body_font_size(&all_blocks);
-    let zoned_pages = classify_all_pages(&page_chars, &all_blocks, body_font_size);
+    // Force KB initialization upfront (amortize ~500ms regex compilation).
+    let _ = (&*kb::JOURNAL_TITLES, &*kb::JOURNAL_ABBREVS, &*kb::REPORT_NUMBERS);
 
+    let doi_cache = if !cli.no_doi_lookup {
+        Some(doi::DoiCache::open()?)
+    } else {
+        None
+    };
+
+    if batch {
+        run_batch(&pdfium, &cli, &doi_cache)
+    } else {
+        run_single(&pdfium, &cli, &doi_cache)
+    }
+}
+
+fn run_single(pdfium: &Pdfium, cli: &Cli, doi_cache: &Option<doi::DoiCache>) -> Result<()> {
     if cli.debug_layout {
+        let page_chars = pdf::extract_chars(pdfium, &cli.files[0])?;
+        let all_blocks = build_page_blocks(&page_chars);
+        let body_font_size = zones::compute_body_font_size(&all_blocks);
+        let zoned_pages = classify_all_pages(&page_chars, &all_blocks, body_font_size);
         print_debug_layout(&zoned_pages);
         return Ok(());
     }
 
+    let parsed = process_pdf(pdfium, &cli.files[0], doi_cache)?;
+    print_output(&parsed, cli.pretty)
+}
+
+fn run_batch(pdfium: &Pdfium, cli: &Cli, doi_cache: &Option<doi::DoiCache>) -> Result<()> {
+    let total = cli.files.len();
+    for (i, file) in cli.files.iter().enumerate() {
+        eprint!("\r[{}/{}] {}", i + 1, total, file.display());
+
+        let result = match process_pdf(pdfium, file, doi_cache) {
+            Ok(refs) => BatchResult {
+                file: file.display().to_string(),
+                references: Some(refs),
+                error: None,
+            },
+            Err(e) => BatchResult {
+                file: file.display().to_string(),
+                references: None,
+                error: Some(format!("{e:#}")),
+            },
+        };
+        println!("{}", serde_json::to_string(&result)?);
+    }
+    eprintln!();
+    Ok(())
+}
+
+fn process_pdf(
+    pdfium: &Pdfium,
+    file: &Path,
+    doi_cache: &Option<doi::DoiCache>,
+) -> Result<Vec<ParsedReference>> {
+    let page_chars = pdf::extract_chars(pdfium, file)?;
+    let all_blocks = build_page_blocks(&page_chars);
+    let body_font_size = zones::compute_body_font_size(&all_blocks);
+    let zoned_pages = classify_all_pages(&page_chars, &all_blocks, body_font_size);
     let raw_refs = collect::collect_references(&zoned_pages);
     let raw_refs = split_semicolon_subrefs(raw_refs);
     let mut parsed = parse_all_references(&raw_refs);
-    if !cli.no_doi_lookup {
-        let cache = doi::DoiCache::open()?;
-        doi::enrich_dois(&mut parsed, &cache);
+    if let Some(cache) = doi_cache {
+        doi::enrich_dois(&mut parsed, cache);
     }
-    print_output(&parsed, cli.pretty)
+    Ok(parsed)
 }
 
 const DEFAULT_PDFIUM_PATHS: &[&str] = &[
