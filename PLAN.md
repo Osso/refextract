@@ -1,23 +1,23 @@
-# refextract Brief - 2026-02-14
+# refextract Brief - 2026-02-15
 
 ## Active Tasks
 - [ ] Two-column layout support (~1,300 refs from 17 zero-extraction papers) — Several high-impact papers (1204.4325, 2004.03543, 1710.01833) have interleaved text from adjacent columns, garbling extracted references. Biggest structural challenge.
-- [ ] Author-year citation marker recognition (e.g., `[Author+Year]`) — 1507.00966 uses `[Abd+14]` style markers. Need new marker pattern in `LINE_MARKER_RE` for alphabetic citation keys.
 - [ ] Various per-paper layout failures — Unnumbered sections, bare superscript markers, no heading found, chapter-end refs. Each affects 1-5 papers.
-- [ ] Image-based PDFs — ~10 old papers (hep-lat_9308011, hep-lat_9309005, hep-lat_9310022, hep-ph_9306320, hep-ph_9506380, hep-ph_9507378, hep-ph_9903282, hep-th_9411108, hep-lat_9605038, hep-lat_9609035). pdfium extracts 0-32 blocks (chart labels only). Unsolvable without OCR.
-- [ ] INSPIRE metadata gaps — 2103.01183 (951 missed: INSPIRE has 950 DOIs, we extract 952 arXiv + 929 journal but no DOIs), plus ~10 other papers. Comparison methodology issue, not extraction bug.
+- [ ] Image-based PDFs — ~10 old papers. pdfium extracts 0-32 blocks (chart labels only). Unsolvable without OCR.
+- [ ] INSPIRE metadata gaps — 2103.01183 (951 missed: DOI-only), 2006.11237 (118: DOI-only), 1905.08669 (112: DOI-only). Comparison methodology issue, not extraction bug.
 - [ ] Context-aware journal validation — Words like `Physics`, `Energy`, `Science` in titles matching as journal names from KB. Need volume/year proximity check to filter false positives.
 
 ## Progress This Session
-- **Position-based ArxivId assignment**: Sub-references get arXiv/DOI from their own token segment instead of inheriting from primary (+543 new matches)
-- **ArxivId-only sub-references**: Secondary arXiv IDs not covered by any journal segment emitted as standalone refs
-- **Old-style volume format**: "Phys. Lett. 249B" → journal "Phys. Lett. B", volume "249" (digits+section-letter splitting)
-- **KB additions**: Eur.Phys.J.Plus, Nature Astron., Nucl.Part.Phys.Proc. (9 new entries)
-- **Comparison normalization**: Soviet→modern journal equivalences (JETP, Usp.), PTEP, SPIE, PoS alpha-prefix volume matching (LAT2006↔2006), abbreviation normalizations (interiors, molec, differ, pramana)
-- **Section letter boundary fix**: Uppercase letter + digit is valid journal boundary (e.g., "Chin. Phys. C40")
-- **Net gain**: 86.1% → 88.9% (+3,548 matched refs across 3 sub-sessions)
+- **Author-year marker recognition**: Added `[Author+Year]` pattern to `LINE_MARKER_RE` group 4. Handles [Aal+12], [ABG14], [ATL14a], [CMS15c] style markers. 1507.00966 went from one 13,221-char blob to properly split refs (+236 matched)
+- **Leading-zero volume matching**: `volumes_match("04", "4")` now returns true. Handles JCAP/JHEP volumes with/without leading zeros (+121 matched)
+- **Comparison normalizations**: cambridge→camb, hadronicj→hadronj equivalence (+11 matched)
+- **Column detection**: Increased histogram from 100→200 buckets, lowered minimum gap from 2→1 bucket (+250 matched, previous sub-session)
+- **Line-number heading prefix**: Multi-digit prefixes accepted when followed by separator (+~15 matched, previous sub-session)
+- **Net gain**: 89.1% → 89.4% (+368 matched refs this sub-session)
 
 ## Previous Sessions
+- `cc47929` — Author-year markers, leading-zero volumes, KB normalizations (89.1%→89.4%)
+- `fd793d1` — Column detection: finer histogram, line-number heading prefix (88.9%→89.1%)
 - `63d0e11` — Multi-ref splitting, old-style volumes, KB/normalization (86.1%→88.9%)
 - `1a58236` — PageRange-as-volume for combined volume numbers (86%→86.1%)
 - `e0315cf` — Add default pdfium library paths
@@ -42,15 +42,13 @@
 ```
 Papers evaluated:     1,000 (0 errors)
 INSPIRE refs total:   136,982
-Extracted refs total: 154,783
-Matched by arXiv ID:  68,112 (50%)
-Matched by journal:   51,277 (37%)
+Extracted refs total: 155,862
+Matched by arXiv ID:  68,227 (50%)
+Matched by journal:   51,780 (38%)
 Matched by DOI:        2,421 (2%)
-Total recall:         121,810 / 136,982 (88.9%)
+Total recall:         122,428 / 136,982 (89.4%)
 ```
-Previous: 86.1% recall (117,728 / 136,982). +4,082 net matched refs.
-97.4% of achievable ceiling (excl. unfixable: no-id 5,954, DOI-only 1,997,
-zero-extraction 1,270, identifiers absent from PDF 2,676).
+Previous: 89.1% (122,060). +368 net matched refs this sub-session.
 
 ## Top 15 Missed Papers (at 88.9% recall)
 ```
@@ -72,13 +70,12 @@ Rank  Paper            INSPIRE  Matched  Missed  Recall%  Category
 15    0802.0007            122        0     122     0%  Zero extraction
 ```
 
-## Gap Analysis (~15,172 unmatched INSPIRE refs)
-- **No identifiers in INSPIRE** (5,954 / 39%): INSPIRE refs with no arXiv, DOI, or journal+volume. Fundamentally unmatchable.
-- **DOI-only in INSPIRE** (1,997 / 13%): DOIs not present in PDF text. INSPIRE added editorially.
-- **Zero extraction** (1,270 / 8%): 17 papers where pdfium extracts no usable text (image PDFs, corrupt files).
-- **Identifiers not in PDF text** (2,676 / 18%): INSPIRE has arXiv/DOI but they don't appear in the PDF.
-- **Journal volume mismatches** (4,207 / 28%): Same journal extracted but different volume, or journal not in extracted refs at all. Mix of collection failures and different refs from same journal.
-- **Remaining arXiv in raw text** (52 / 0.3%): ArxivIds present in raw text but not captured. Minor.
+## Gap Analysis (~14,554 unmatched INSPIRE refs)
+- **No identifiers in INSPIRE** (5,951 / 41%): INSPIRE refs with no arXiv, DOI, or journal+volume. Fundamentally unmatchable.
+- **DOI-only in INSPIRE** (1,996 / 14%): DOIs not present in PDF text. INSPIRE added editorially.
+- **Journal not in extracted** (3,457 / 24%): INSPIRE has journal but we don't have it in extracted refs. Mostly from extraction gaps (two-column, 0-extraction papers), not KB misses.
+- **Journal volume mismatch** (2,544 / 17%): Same journal extracted but different volume. Mostly refs not extracted at all (the journal appears in OTHER extracted refs). True volume format mismatches are a small fraction.
+- **ArXiv not in extracted** (613 / 4%): INSPIRE arXiv IDs not found in extracted data.
 
 ## 0-Recall Paper Categories (~28 papers)
 1. **Image-based PDFs** (~10 papers): Old (1993-1999) papers where pdfium extracts 0-32 blocks. Unsolvable without OCR.
@@ -124,6 +121,8 @@ Per-paper timing (1303.4571, 104 pages):
 - Each eval invocation re-initializes KB (Lazy static per process). Batch mode would amortize.
 
 ## Commits
+- `cc47929` — Author-year markers, leading-zero volumes, KB normalizations (89.1%→89.4%)
+- `fd793d1` — Column detection: finer histogram, line-number heading prefix (88.9%→89.1%)
 - `63d0e11` — Multi-ref splitting, old-style volumes, KB/normalization (86.1%→88.9%)
 - `1a58236` — PageRange-as-volume for combined volume numbers (86%→86.1%)
 - `e0315cf` — Add default pdfium library paths
@@ -146,11 +145,10 @@ Per-paper timing (1303.4571, 104 pages):
 
 ## Next Steps (by estimated impact)
 1. **Two-column layout support** (~1,300 refs from 17 zero-extraction papers) — biggest structural challenge, requires column deinterleaving in layout.rs
-2. **Author-year citation marker recognition** (e.g., `[Author+Year]`, `[Abd+14]`) — 1507.00966 alone has 64 arXiv IDs in one blob. Need new marker pattern.
-3. **Per-paper layout failures** — unnumbered sections, bare superscript markers, no heading, chapter-end refs. Each affects 1-5 papers.
-4. **Context-aware journal validation** (require volume/year near journal match to filter false positives)
-5. **Batch mode** to amortize KB init cost
-6. **Prefix trie** for report number matching (skip most patterns without regex)
+2. **Per-paper layout failures** — unnumbered sections, bare superscript markers, no heading, chapter-end refs. Each affects 1-5 papers.
+3. **Context-aware journal validation** (require volume/year near journal match to filter false positives)
+4. **Batch mode** to amortize KB init cost
+5. **Prefix trie** for report number matching (skip most patterns without regex)
 
 ## Technical Context
 
