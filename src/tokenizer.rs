@@ -35,8 +35,9 @@ static VOLUME_YEAR_PAGE_RE: Lazy<Regex> = Lazy::new(|| {
 });
 
 /// Volume:page: "70:094505" or "95:122002" or "21:S403–S408"
+/// Also old-style section: "76B:436" or "40A:181"
 static VOLUME_COLON_PAGE_RE: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"^(\d+):([A-Za-z]?\d+(?:\s*[-–—]\s*[A-Za-z]?\d+)?)$").unwrap());
+    Lazy::new(|| Regex::new(r"^(\d+)([A-D])?:([A-Za-z]?\d+(?:\s*[-–—]\s*[A-Za-z]?\d+)?)$").unwrap());
 
 /// Volume(issue):page: "72(2):1346–1349" or "23(21):1704–1706"
 static VOLUME_ISSUE_COLON_PAGE_RE: Lazy<Regex> = Lazy::new(|| {
@@ -355,42 +356,58 @@ fn ends_with_dash(word: &str) -> bool {
     trimmed.ends_with('-') || trimmed.ends_with('–') || trimmed.ends_with('—')
 }
 
-fn classify_word(word: &str, tokens: &mut Vec<Token>) {
-    let clean = word.trim_matches(|c: char| c == ',' || c == '.' || c == ';' || c == ':');
-
+/// Try to parse compound numeration patterns: volume:page, volume(year)page, etc.
+/// Returns true if matched and tokens were emitted.
+fn try_compound_numeration(clean: &str, tokens: &mut Vec<Token>) -> bool {
     // Compact volume(year)page: "417(1994)181"
     if let Some(caps) = VOLUME_YEAR_PAGE_RE.captures(clean) {
         push_number(tokens, &caps[1]);
         push_year(tokens, &caps[2]);
         push_page_or_number(tokens, &caps[3]);
-        return;
+        return true;
     }
-    // Volume:page: "70:094505"
+    // Volume:page: "70:094505" or old-style "76B:436"
     if let Some(caps) = VOLUME_COLON_PAGE_RE.captures(clean) {
         push_number(tokens, &caps[1]);
-        push_page_or_number(tokens, &caps[2]);
-        return;
+        if let Some(letter) = caps.get(2) {
+            tokens.push(Token {
+                kind: TokenKind::Word,
+                text: letter.as_str().to_string(),
+                normalized: None,
+            });
+        }
+        push_page_or_number(tokens, &caps[3]);
+        return true;
     }
     // Compact volume(year): "301(1993)"
     if let Some(caps) = VOLUME_YEAR_RE.captures(clean) {
         push_number(tokens, &caps[1]);
         push_year(tokens, &caps[2]);
-        return;
+        return true;
     }
     // Volume(issue):page: "72(2):1346–1349" → volume + page
     if let Some(caps) = VOLUME_ISSUE_COLON_PAGE_RE.captures(clean) {
         push_number(tokens, &caps[1]);
         push_page_or_number(tokens, &caps[2]);
-        return;
+        return true;
     }
     // Volume with issue number: "82(25)" → emit volume only
     if let Some(caps) = VOLUME_ISSUE_RE.captures(clean) {
         push_number(tokens, &caps[1]);
-        return;
+        return true;
     }
     // Article number with suffix: "111301(R)", "040404/1" → emit digits
     if let Some(caps) = ARTICLE_NUMBER_RE.captures(clean) {
         push_number(tokens, &caps[1]);
+        return true;
+    }
+    false
+}
+
+fn classify_word(word: &str, tokens: &mut Vec<Token>) {
+    let clean = word.trim_matches(|c: char| c == ',' || c == '.' || c == ';' || c == ':');
+
+    if try_compound_numeration(clean, tokens) {
         return;
     }
 
