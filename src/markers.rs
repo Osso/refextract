@@ -230,6 +230,7 @@ fn find_superscript_pairs(
 ) -> Vec<(String, String, usize)> {
     let mut pairs = Vec::new();
     let mut i = all_blocks.len();
+    let mut gap = 0_usize;
 
     while i > 0 {
         i -= 1;
@@ -244,15 +245,25 @@ fn find_superscript_pairs(
             let num: u32 = caps[1].parse().unwrap_or(0);
             // Skip year-like numbers (1900-2099) — not reference markers
             if (1900..2100).contains(&num) {
+                gap += 1;
                 continue;
             }
             let marker = caps[1].to_string();
             let citation = collect_citation_after(all_blocks, i + 1);
             if !citation.is_empty() {
                 pairs.push((marker, citation, all_blocks[i].page_num));
+                gap = 0;
             }
-        } else if !pairs.is_empty() && !has_citation_content(trimmed) {
-            break;
+        } else if has_citation_content(trimmed) {
+            gap = 0;
+        } else {
+            gap += 1;
+            // Allow gaps for extended notes in references (some refs
+            // have multi-block explanatory text without citation markers).
+            // Stop after 30 consecutive non-ref, non-citation blocks.
+            if !pairs.is_empty() && gap >= 30 {
+                break;
+            }
         }
     }
 
