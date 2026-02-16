@@ -17,6 +17,11 @@ static ARXIV_OLD_RE: Lazy<Regex> = Lazy::new(|| {
 static URL_RE: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"https?://[^\s,;]+").unwrap());
 
+/// Matches arXiv ID inside a URL: arxiv.org/abs/<id> or arxiv.org/pdf/<id>
+static ARXIV_URL_RE: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r"(?i)arxiv\.org/(?:abs|pdf)/(.+)").unwrap()
+});
+
 static ISBN_RE: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"(?:978|979)[-\s]?\d[-\s]?\d{2,5}[-\s]?\d{2,5}[-\s]?\d").unwrap());
 
@@ -99,6 +104,7 @@ fn find_identifier_spans(text: &str) -> Vec<Span> {
     let mut spans = Vec::new();
     add_doi_spans(&mut spans, text);
     add_regex_spans(&mut spans, text, &URL_RE, TokenKind::Url);
+    convert_arxiv_url_spans(&mut spans);
     add_arxiv_old_spans(&mut spans, text);
     add_regex_spans(&mut spans, text, &ARXIV_NEW_RE, TokenKind::ArxivId);
     add_regex_spans(&mut spans, text, &ISBN_RE, TokenKind::Isbn);
@@ -107,6 +113,34 @@ fn find_identifier_spans(text: &str) -> Vec<Span> {
     spans.sort_by_key(|s| s.start);
     remove_overlapping_spans(&mut spans);
     spans
+}
+
+/// Convert URL spans containing arXiv URLs to ArxivId spans.
+/// E.g. "http://arxiv.org/abs/hep-ph/0202089" → ArxivId "hep-ph/0202089"
+fn convert_arxiv_url_spans(spans: &mut Vec<Span>) {
+    for span in spans.iter_mut() {
+        if span.kind != TokenKind::Url {
+            continue;
+        }
+        if let Some(caps) = ARXIV_URL_RE.captures(&span.text) {
+            let id = caps[1]
+                .trim_end_matches(|c: char| ".])}>/".contains(c))
+                .to_string();
+            if !id.is_empty() {
+                span.kind = TokenKind::ArxivId;
+                // Normalize old-style IDs (spaces in category)
+                span.text = if id.contains('/') {
+                    normalize_arxiv_old(&id)
+                } else {
+                    // Strip version suffix for new-style
+                    id.split('v')
+                        .next()
+                        .unwrap_or(&id)
+                        .to_string()
+                };
+            }
+        }
+    }
 }
 
 fn add_doi_spans(spans: &mut Vec<Span>, text: &str) {
