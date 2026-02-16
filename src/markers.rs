@@ -3,12 +3,17 @@ use regex::Regex;
 
 use crate::types::{RawReference, ReferenceSource, ZoneKind, ZonedBlock};
 
-/// Line marker patterns: [1], (1), 1., 1) at the start of a line.
+/// Line marker patterns: [1], (1), 1., 1), [Author+Year] at the start of a line.
 /// Bracketed/paren forms allow up to 4 digits (review papers with 2000+ refs).
 /// Bare-number variants (N./N)) limited to 1-3 digits to avoid matching years like "2024.".
 /// Bare variants also require trailing whitespace/EOL to reject decimals like "0.01".
-pub(crate) static LINE_MARKER_RE: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"^\s*(?:\[(\d{1,4})\]|\((\d{1,4})\)|(\d{1,3})[.\)](?:\s|$))\s*").unwrap());
+/// Author-year markers: [Aal+12], [ABG14], [Kim+15a], [ATL14a], [CMS15c].
+pub(crate) static LINE_MARKER_RE: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(
+        r"^\s*(?:\[(\d{1,4})\]|\((\d{1,4})\)|(\d{1,3})[.\)](?:\s|$)|\[([A-Z][\p{L}+]{0,7}\d{2}[a-z]?)\])\s*",
+    )
+    .unwrap()
+});
 
 /// Check if text contains citation-like content (years, journals, arXiv IDs).
 pub(crate) fn has_citation_content(text: &str) -> bool {
@@ -475,6 +480,7 @@ fn extract_marker(caps: &regex::Captures) -> Option<String> {
     caps.get(1)
         .or_else(|| caps.get(2))
         .or_else(|| caps.get(3))
+        .or_else(|| caps.get(4))
         .map(|m| m.as_str().to_string())
 }
 

@@ -72,6 +72,7 @@ def normalize_journal(title: str) -> str:
     n = n.replace("theory", "theor")
     n = n.replace("interiors", "inter")
     n = n.replace("molec", "mol")
+    n = n.replace("cambridge", "camb")
     # Strip trailing location/country suffixes
     for suffix in ("usa", "uk"):
         if n.endswith(suffix):
@@ -107,6 +108,7 @@ def normalize_journal(title: str) -> str:
         "jdiffergeom": "jdiffgeom",
         "jmolecspectrosc": "jmolspectrosc",
         "pramanajphys": "pramana",
+        "hadronicj": "hadronj",
     }
     for full, short in equiv.items():
         if n.startswith(full):
@@ -135,6 +137,15 @@ def volumes_match(v1: str, v2: str) -> bool:
             parts = v2.split(sep)
             if v1 in parts:
                 return True
+    # Leading-zero normalization: "04" matches "4" (JCAP/JHEP volumes)
+    s1 = v1.lstrip("0") or "0"
+    s2 = v2.lstrip("0") or "0"
+    if s1 == s2:
+        return True
+    # Year-prefix + leading zero: "1509" vs "9" — strip year, then leading zeros
+    short2, long2 = (s1, s2) if len(s1) <= len(s2) else (s2, s1)
+    if len(short2) >= 1 and long2.endswith(short2) and len(long2) - len(short2) <= 2:
+        return True
     # Alpha-prefixed volume: "LAT2006" matches "2006" (PoS conference codes)
     if short.isdigit() and not long.isdigit():
         alpha_stripped = long.lstrip("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz")
