@@ -446,12 +446,14 @@ fn classify_word(word: &str, tokens: &mut Vec<Token>) {
         return;
     }
 
-    // Match "ibid", "ibid.", "[Erratum-ibid", "Erratum-ibid.", etc.
+    // Match "ibid", "ibid.", "[Erratum-ibid", "Erratum:ibid.", etc.
     let clean_lower = clean.trim_start_matches('[').to_ascii_lowercase();
     if clean_lower == "ibid"
         || clean_lower == "ibid."
         || clean_lower.ends_with("-ibid")
         || clean_lower.ends_with("-ibid.")
+        || clean_lower.ends_with(":ibid")
+        || clean_lower.ends_with(":ibid.")
     {
         tokens.push(Token { kind: TokenKind::Ibid, text: word.to_string(), normalized: None });
         return;

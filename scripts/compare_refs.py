@@ -131,6 +131,14 @@ def normalize_journal(title: str) -> str:
         # Eur. Phys. J. truncated to Phys. J. (line break in PDF)
         "physjc": "eurphysjc",
         "physja": "eurphysja",
+        # Nature sub-journals: "Nat." ↔ "Nature" prefix interchangeable
+        "natphoton": "naturephoton",
+        "natnanotech": "naturenanotech",
+        "natcommun": "naturecommun",
+        "natelectron": "natureelectron",
+        "natrevphys": "naturerevphys",
+        "natastr": "natureastr",
+        "natchem": "naturechem",
     }
     for full, short in equiv.items():
         if n.startswith(full):
