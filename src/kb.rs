@@ -89,6 +89,7 @@ pub static COLLABORATIONS: Lazy<HashMap<String, String>> = Lazy::new(|| {
 
 /// A report number pattern: institute prefix + compiled regex for numeration.
 pub struct ReportNumberPattern {
+    #[allow(dead_code)]
     pub prefix: String,
     pub standardized: String,
     pub numeration_re: Regex,

@@ -78,7 +78,7 @@ pub fn is_reference_heading_line(line_text: &str) -> bool {
 
 fn is_heading_text(text: &str) -> bool {
     // Strip trailing punctuation (colon, period)
-    let text = text.trim_end_matches(|c: char| c == ':' || c == '.');
+    let text = text.trim_end_matches([':', '.']);
     // Exact matches
     if matches!(
         text,

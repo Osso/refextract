@@ -443,10 +443,8 @@ fn find_author_split_positions(text: &str) -> Vec<usize> {
     }
 
     for m in AUTHOR_START_NOCOMMA_RE.find_iter(text) {
-        if let Some(pos) = validate_split_position(text, m.start()) {
-            if !positions.contains(&pos) {
-                positions.push(pos);
-            }
+        if let Some(pos) = validate_split_position(text, m.start()) && !positions.contains(&pos) {
+            positions.push(pos);
         }
     }
 
@@ -467,12 +465,10 @@ fn find_author_split_positions(text: &str) -> Vec<usize> {
 fn find_biblio_label_positions(text: &str) -> Vec<usize> {
     let mut positions = Vec::new();
     for m in BIBLIO_YEAR_COLON_RE.find_iter(text) {
-        if let Some(pos) = find_label_start(text, m.start()) {
-            if pos > 0 {
-                let before = text[..pos].trim_end();
-                if !before.is_empty() && is_ref_boundary(before) {
-                    positions.push(pos);
-                }
+        if let Some(pos) = find_label_start(text, m.start()) && pos > 0 {
+            let before = text[..pos].trim_end();
+            if !before.is_empty() && is_ref_boundary(before) {
+                positions.push(pos);
             }
         }
     }
@@ -527,7 +523,7 @@ fn find_label_start(text: &str, year_pos: usize) -> Option<usize> {
             .split('-')
             .all(|part| {
                 let mut chars = part.chars();
-                chars.next().map_or(false, |c| c.is_ascii_uppercase())
+                chars.next().is_some_and(|c| c.is_ascii_uppercase())
                     && chars.all(|c| c.is_alphanumeric() || c == '\'')
             });
         if is_name {

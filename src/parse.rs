@@ -145,10 +145,8 @@ fn assign_numeration(window: &[Token], result: &mut ParsedReference) {
                 } else if let Some((vol, page)) = extract_conference_volume(&token.text) {
                     result.journal_volume = Some(vol);
                     volume_found = true;
-                    if let Some(p) = page {
-                        if result.journal_page.is_none() {
-                            result.journal_page = Some(p);
-                        }
+                    if let Some(p) = page && result.journal_page.is_none() {
+                        result.journal_page = Some(p);
                     }
                 }
             }
@@ -334,6 +332,8 @@ fn extract_sub_references(
         used_arxiv_positions.push(pos);
     }
 
+    sub_refs.extend(extract_ibid_sub_refs(raw, tokens, primary));
+
     sub_refs.extend(extract_arxiv_only_sub_refs(
         raw, tokens, primary, &used_arxiv_positions,
     ));
@@ -370,6 +370,50 @@ fn extract_journal_sub_refs(
         let window_end = next_journal.min(jpos + 9);
         assign_numeration(&tokens[jpos + 1..window_end], &mut sub);
 
+        if sub.journal_volume.is_some() {
+            sub_refs.push(sub);
+        }
+    }
+    sub_refs
+}
+
+/// Create sub-references for ibid citations (errata, addenda).
+/// "Phys. Rev. C 84, 024617 (2011) [Erratum-ibid. 85, 029901 (2012)]"
+/// produces a sub-ref with the same journal, different volume/page/year.
+fn extract_ibid_sub_refs(
+    raw: &RawReference,
+    tokens: &[Token],
+    primary: &ParsedReference,
+) -> Vec<ParsedReference> {
+    let Some(ref journal) = primary.journal_title else {
+        return Vec::new();
+    };
+
+    let mut sub_refs = Vec::new();
+    for (i, token) in tokens.iter().enumerate() {
+        if token.kind != TokenKind::Ibid {
+            continue;
+        }
+        // Create a sub-ref with the primary's journal
+        let mut sub = ParsedReference {
+            raw_ref: raw.text.clone(),
+            linemarker: raw.linemarker.clone(),
+            authors: primary.authors.clone(),
+            title: None,
+            journal_title: Some(journal.clone()),
+            journal_volume: None,
+            journal_year: None,
+            journal_page: None,
+            doi: None,
+            arxiv_id: None,
+            isbn: None,
+            report_number: None,
+            url: None,
+            collaboration: primary.collaboration.clone(),
+            source: raw.source,
+        };
+        let window_end = (i + 9).min(tokens.len());
+        assign_numeration(&tokens[i + 1..window_end], &mut sub);
         if sub.journal_volume.is_some() {
             sub_refs.push(sub);
         }

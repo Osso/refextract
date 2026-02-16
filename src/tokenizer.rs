@@ -117,7 +117,7 @@ fn find_identifier_spans(text: &str) -> Vec<Span> {
 
 /// Convert URL spans containing arXiv URLs to ArxivId spans.
 /// E.g. "http://arxiv.org/abs/hep-ph/0202089" → ArxivId "hep-ph/0202089"
-fn convert_arxiv_url_spans(spans: &mut Vec<Span>) {
+fn convert_arxiv_url_spans(spans: &mut [Span]) {
     for span in spans.iter_mut() {
         if span.kind != TokenKind::Url {
             continue;
@@ -266,7 +266,8 @@ fn extend_section_letter(
     len: usize,
     abbrev: String,
 ) -> (usize, String) {
-    let remaining = &text[pos + len..].as_bytes();
+    let remaining = text.as_bytes();
+    let remaining = &remaining[pos + len..];
     let mut i = 0;
     // Skip optional comma + whitespace (for "Journal, D7:1888" format)
     if i < remaining.len() && remaining[i] == b',' {
@@ -386,7 +387,7 @@ fn classify_gap(text: &str, tokens: &mut Vec<Token>) {
 }
 
 fn ends_with_dash(word: &str) -> bool {
-    let trimmed = word.trim_end_matches(|c: char| c == ',' || c == '.' || c == ';' || c == ':');
+    let trimmed = word.trim_end_matches([',', '.', ';', ':']);
     trimmed.ends_with('-') || trimmed.ends_with('–') || trimmed.ends_with('—')
 }
 
@@ -439,13 +440,19 @@ fn try_compound_numeration(clean: &str, tokens: &mut Vec<Token>) -> bool {
 }
 
 fn classify_word(word: &str, tokens: &mut Vec<Token>) {
-    let clean = word.trim_matches(|c: char| c == ',' || c == '.' || c == ';' || c == ':');
+    let clean = word.trim_matches(|c: char| matches!(c, ',' | '.' | ';' | ':' | '[' | ']'));
 
     if try_compound_numeration(clean, tokens) {
         return;
     }
 
-    if clean.eq_ignore_ascii_case("ibid") || clean.eq_ignore_ascii_case("ibid.") {
+    // Match "ibid", "ibid.", "[Erratum-ibid", "Erratum-ibid.", etc.
+    let clean_lower = clean.trim_start_matches('[').to_ascii_lowercase();
+    if clean_lower == "ibid"
+        || clean_lower == "ibid."
+        || clean_lower.ends_with("-ibid")
+        || clean_lower.ends_with("-ibid.")
+    {
         tokens.push(Token { kind: TokenKind::Ibid, text: word.to_string(), normalized: None });
         return;
     }

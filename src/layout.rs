@@ -228,8 +228,9 @@ fn find_gap_in_coverage(
     let mut gap_start = 0;
     let mut in_gap = false;
 
-    for i in search_start..search_end {
-        if coverage[i] <= threshold {
+    for (i, &val) in coverage[search_start..search_end].iter().enumerate() {
+        let i = i + search_start;
+        if val <= threshold {
             if !in_gap {
                 gap_start = i;
                 in_gap = true;
