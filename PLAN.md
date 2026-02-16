@@ -14,9 +14,17 @@
 - **KB cleanup**: Removed false positive entries (Quantum Mechanics, Computing London) that produced 191 false journal extractions across test set.
 - **Comparison improvements**: PoS normalization (pos+conf→pos vol=CONF+year), eurphysjdirect→eurphysj, physscrtopissues→physscrt, naturwissenschaften→naturwiss. +79 journal matches.
 - **Parser: require volume for journal output**: Cleared journal_title when no volume found. Eliminates 2,740 false positive journal-only extractions with zero recall cost.
-- **Net gain**: 90.1% → 90.3% (on expanded 1000-paper set; 123,566 → 123,643 matched)
+- **Soviet/Russian journal equivalences**: yadfiz→physatnucl, sovjnuclphys→physatnucl, zhekspteorfiz→jexptheorphys. +17 journal matches.
+- **Colon separator in journal normalization**: Treat colons as word separators in normalize_abbrev() and find_original_byte_len(). Fixes "J. Phys.: Conf. Ser." matching. +35 matches.
+- **KB false positive cleanup**: Removed ASTRO/ASTRON/ASTRONOM→Astronomy (159 false positives from line-broken "Astrophys."), SCIEN→Science (matching "Scientific"). Zero recall cost.
+- **Comparison journal equivalences**: annalenphys→annphys, comptesrendusphysique→crphys, chinjphysc→chinphysc, gravitcosmol→gravcosmol, physjc→eurphysjc. +7 matches.
+- **Net gain**: 90.1% → 90.4% (on expanded 1000-paper set; 123,566 → 123,702 matched)
 
 ## Previous Sessions
+- `2f6261e` — Comparison normalization: journal equivalences from arXiv cross-matching (+7)
+- `bba4a2b` — Colon separator in journal name normalization (+35 matches, 90.3%→90.4%)
+- `33280bd` — Soviet/Russian journal equivalences (+17 journal matches)
+- `b650256` — KB cleanup, comparison normalization, journal-requires-volume (90.0%→90.3%)
 - `1d81a30` — Tokenizer refactor: section-letter volume:page, try_compound_numeration extraction
 - `3be9f6b` — Biblio label splitting, running header tolerance, extended heading verification (90.0%→90.1%)
 - `fb24734` — Superscript marker gap tolerance (89.9%→90.0%)
@@ -47,13 +55,13 @@
 ```
 Papers evaluated:     1,000 (0 errors)
 INSPIRE refs total:   136,982
-Extracted refs total: 162,182
+Extracted refs total: 162,070
 Matched by arXiv ID:  69,458 (51%)
-Matched by journal:   51,781 (38%)
+Matched by journal:   51,823 (38%)
 Matched by DOI:        2,421 (2%)
-Total matched:        123,660 / 136,982 (90.3%)
+Total matched:        123,702 / 136,982 (90.4%)
 ```
-Previous: 123,566 (90.0%). +94 from comparison improvements, KB cleanup, parser fix.
+Previous: 123,660 (90.3%). +35 from colon separator fix.
 
 ## Top 15 Missed Papers (at 90.1% recall)
 ```
