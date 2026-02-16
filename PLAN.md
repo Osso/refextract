@@ -7,20 +7,25 @@
 - [ ] INSPIRE metadata gaps — 2103.01183 (951 missed: DOI-only), 2006.11237 (118: DOI-only), 1905.08669 (112: DOI-only), 1003.3928 (121 refs: empty metadata). Comparison methodology issue, not extraction bug.
 - [ ] Context-aware journal validation — Words like `Physics`, `Energy`, `Science` in titles matching as journal names from KB. Need volume/year proximity check to filter false positives.
 
-## Progress This Session
-- **Expanded test set**: Downloaded 82 new papers (Instrumentation, Computing, Accelerators, General Physics, recent papers) to reach 1,000 papers. Recall held at 90% — model generalizes well across categories.
-- **Tokenizer refactor**: Extracted `try_compound_numeration()` from `classify_word()`. Added section-letter support in `VOLUME_COLON_PAGE_RE` for old-style formats like `76B:436`. +74 journal matches.
-- **Deep gap analysis on 1000 papers**: Confirmed theoretical ceiling at ~94%. Of ~13,339 unmatched refs: 45% have no identifiers, 18% DOI-only (editorial), 26% journal extraction gap (mostly from zero-extraction papers), 12% arXiv not extracted.
-- **KB cleanup**: Removed false positive entries (Quantum Mechanics, Computing London) that produced 191 false journal extractions across test set.
-- **Comparison improvements**: PoS normalization (pos+conf→pos vol=CONF+year), eurphysjdirect→eurphysj, physscrtopissues→physscrt, naturwissenschaften→naturwiss. +79 journal matches.
-- **Parser: require volume for journal output**: Cleared journal_title when no volume found. Eliminates 2,740 false positive journal-only extractions with zero recall cost.
-- **Soviet/Russian journal equivalences**: yadfiz→physatnucl, sovjnuclphys→physatnucl, zhekspteorfiz→jexptheorphys. +17 journal matches.
-- **Colon separator in journal normalization**: Treat colons as word separators in normalize_abbrev() and find_original_byte_len(). Fixes "J. Phys.: Conf. Ser." matching. +35 matches.
-- **KB false positive cleanup**: Removed ASTRO/ASTRON/ASTRONOM→Astronomy (159 false positives from line-broken "Astrophys."), SCIEN→Science (matching "Scientific"). Zero recall cost.
-- **Comparison journal equivalences**: annalenphys→annphys, comptesrendusphysique→crphys, chinjphysc→chinphysc, gravitcosmol→gravcosmol, physjc→eurphysjc. +7 matches.
-- **Net gain**: 90.1% → 90.4% (on expanded 1000-paper set; 123,566 → 123,702 matched)
+## Progress This Session (90.1% → 90.4%)
+- **Ibid/erratum sub-reference extraction**: Recognize `[Erratum-ibid, V, P (Y)]` and `ibid., V, P (Y)` patterns as sub-references inheriting the primary's journal title. Extended tokenizer to match `Erratum-ibid`, `Addendum-ibid`, `Erratum:ibid` as Ibid tokens. +43 matches.
+- **Bracket trimming in tokenizer**: Added `[` and `]` to `classify_word` trim set, fixing year detection in `(2012)].` patterns where trailing `]` broke year regex matching.
+- **Nature journal KB fixes**: Changed `Nature Nanotechnology` → `Nature Nanotech.` to match INSPIRE abbreviation. Fixed duplicate `NATURE PHOTONICS` entry (had both `Nature Photonics` and `Nature Photon.` outputs).
+- **New journal KB entries**: Phys. Rev. Applied, Phys. Rev. Research, Galaxies, additional Nature Rev. Phys. variants.
+- **Comparison equivalences**: Added Nat↔Nature prefix mapping for sub-journals (photon, nanotech, commun, electron, revphys, astr, chem). +8 matches.
+- **DOI lookup via CrossRef** (user-added): Query CrossRef API to enrich parsed refs with DOIs. SQLite cache at `~/.cache/refextract/doi_cache.db`. Skip with `--no-doi-lookup`.
+- **Evaluate script**: Added `--no-doi-lookup` flag to avoid CrossRef latency during evaluation.
+- **Deep gap analysis** (proper normalization): Of 13,187 unmatched refs: 45% no_id (5,935), 25% journal_no_raw (3,347), 15% doi_only (1,995), 8% zero_extract (1,091), 3% journal_with_raw (424, actionable), 3% arxiv_only (395, metadata-only).
+- **Net gain**: 123,702 → 123,795 (+93 matches, 90.4%)
 
 ## Previous Sessions
+- `57abff8` — Skip DOI lookup in evaluation
+- `209cd30` — DOI lookup via CrossRef with SQLite cache
+- `19602da` — Journal KB entries, Nature abbreviation fixes, Erratum:ibid
+- `bec7c54` — Ibid/erratum sub-reference extraction, Nature journal KB variants (+43)
+- `267a5da` — Old arXiv categories: q-alg, alg-geom, solv-int (+9)
+- `99fca27` — arXiv ID extraction from URLs (+20)
+- `71311c2` — KB false positive cleanup: ASTRO/ASTRON, SCIEN
 - `2f6261e` — Comparison normalization: journal equivalences from arXiv cross-matching (+7)
 - `bba4a2b` — Colon separator in journal name normalization (+35 matches, 90.3%→90.4%)
 - `33280bd` — Soviet/Russian journal equivalences (+17 journal matches)
@@ -55,13 +60,13 @@
 ```
 Papers evaluated:     1,000 (0 errors)
 INSPIRE refs total:   136,982
-Extracted refs total: 162,070
-Matched by arXiv ID:  69,458 (51%)
-Matched by journal:   51,823 (38%)
+Extracted refs total: 162,711
+Matched by arXiv ID:  69,541 (51%)
+Matched by journal:   51,833 (38%)
 Matched by DOI:        2,421 (2%)
-Total matched:        123,702 / 136,982 (90.4%)
+Total matched:        123,795 / 136,982 (90.4%)
 ```
-Previous: 123,660 (90.3%). +35 from colon separator fix.
+Previous: 123,702. +93 from ibid extraction, KB fixes, comparison equivalences.
 
 ## Top 15 Missed Papers (at 90.1% recall)
 ```
@@ -83,12 +88,14 @@ Rank  Paper            INSPIRE  Matched  Missed  Recall%  Category
 15    1902.00134          1051      932     119    88%  Matching gap (118 no_id)
 ```
 
-## Gap Analysis (~13,322 unmatched INSPIRE refs)
-- **No identifiers in INSPIRE** (5,954 / 45%): Refs with no arXiv, DOI, or journal+volume. Fundamentally unmatchable.
-- **DOI-only in INSPIRE** (2,360 / 18%): DOIs added editorially, not in PDF text.
-- **Journal extraction gap** (3,441 / 26%): INSPIRE has journal+vol but not matched. Top ~1,500 from zero-extraction papers (image-based, two-column). Remaining ~2,000 spread across 630 papers (~3/paper avg). Top missed journals: Phys.Lett.B, Phys.Rev.Lett., Phys.Rev.D, Nucl.Phys.B.
-- **ArXiv not in extracted** (1,567 / 12%): Mostly INSPIRE record-linking (arXiv not in PDF text) or zero-extraction papers.
-- **Theoretical ceiling** (~94%): Only ~7,368 refs (55% of gap) have identifiers. ~1,500 from zero-extraction papers (two-column/image-based), rest scattered across many papers.
+## Gap Analysis (~13,187 unmatched INSPIRE refs)
+- **No identifiers in INSPIRE** (5,935 / 45%): Refs with no arXiv, DOI, or journal+volume. Fundamentally unmatchable.
+- **Journal without raw text** (3,347 / 25%): INSPIRE has journal+vol metadata but no raw_ref text — published-version-only entries not in arXiv PDF.
+- **DOI-only in INSPIRE** (1,995 / 15%): INSPIRE has only DOI, no journal or arXiv. Mostly editorial additions.
+- **Zero-extraction papers** (1,091 / 8%): Image-based or Type3 font PDFs where pdfium extracts no usable text.
+- **Journal with raw text** (424 / 3%): **Only actionable category.** INSPIRE has journal+vol and raw text. Spread thinly: Phys.Rev.D (20), Phys.Lett.B (20), Nucl.Phys.B (16), PoS (15), Eur.Phys.J.C (14). Edge cases in formatting.
+- **ArXiv-only in INSPIRE** (395 / 3%): INSPIRE has arXiv ID but no raw text — record-linking metadata, not in PDF.
+- **Theoretical ceiling** (~94.7%): Only 424 refs are genuinely fixable through extraction improvements.
 
 ## 0-Recall Paper Categories (14 papers with >10 INSPIRE refs)
 1. **Two-column interleaving** (3 papers): 0704.3011 (575 refs), 0802.0007 (122), 0711.3596 (55). pdfium interleaves columns, garbling text. Text IS extractable (pdftotext works).
@@ -136,6 +143,17 @@ Per-paper timing (1303.4571, 104 pages):
 - Each eval invocation re-initializes KB (Lazy static per process). Batch mode would amortize.
 
 ## Commits
+- `57abff8` — Skip DOI lookup in evaluation (--no-doi-lookup)
+- `209cd30` — DOI lookup via CrossRef with SQLite cache
+- `19602da` — Journal KB entries, Nature abbreviation fixes, Erratum:ibid support (+8)
+- `bec7c54` — Ibid/erratum sub-reference extraction, Nature journal KB variants (+43)
+- `267a5da` — Old arXiv categories (+9)
+- `99fca27` — arXiv ID extraction from URLs (+20)
+- `71311c2` — KB false positive cleanup: ASTRO/ASTRON, SCIEN
+- `2f6261e` — Journal equivalences in comparison (+7)
+- `bba4a2b` — Colon separator in journal name normalization (+35)
+- `33280bd` — Soviet/Russian journal equivalences (+17)
+- `b650256` — KB cleanup, comparison normalization, journal-requires-volume (90.0%→90.3%)
 - `1d81a30` — Tokenizer refactor: section-letter volume:page, try_compound_numeration extraction (+74 journal matches)
 - `3be9f6b` — Biblio label splitting, running header tolerance, extended heading verification (90.0%→90.1%)
 - `fb24734` — Superscript marker gap tolerance (89.9%→90.0%)
@@ -163,11 +181,11 @@ Per-paper timing (1303.4571, 104 pages):
 - `65b1a65` — Initial implementation of layout-aware HEP reference extractor
 
 ## Next Steps (by estimated impact)
-1. **Two-column layout support** (~750 refs from 3 text-extractable zero-extraction papers: 0704.3011, 0802.0007, 0711.3596) — pdfium interleaves columns. Need column deinterleaving in layout.rs. Also affects 1204.4325 (262 missed, 40% recall).
-2. **Context-aware journal validation** (require volume/year near journal match to filter false positives — reduces over-extraction noise)
-3. **Comparison methodology improvement** — INSPIRE often has arXiv IDs for refs where the PDF only has journal+vol. Round-trip matching (look up cited paper's journal from arXiv) would increase measured recall without code changes.
-4. **Batch mode** to amortize KB init cost (~500ms per invocation)
-5. **Prefix trie** for report number matching (skip most patterns without regex)
+1. **Two-column layout support** (~750 refs from 3 text-extractable zero-extraction papers: 0704.3011, 0802.0007, 0711.3596) — pdfium interleaves columns. Need column deinterleaving in layout.rs. Also affects 1204.4325 (262 missed, 40% recall). **Biggest remaining win.**
+2. **Cross-reference ibid resolution** (~8 refs) — Ibid in separate raw_ref (split by `;`) doesn't inherit journal from prior raw_ref with same linemarker. Low impact.
+3. **Batch mode** to amortize KB init cost (~500ms per invocation)
+4. **Prefix trie** for report number matching (skip most patterns without regex)
+5. **Note**: Only 424 of 13,187 unmatched refs are genuinely fixable. Diminishing returns beyond two-column support.
 
 ## Technical Context
 
@@ -181,7 +199,8 @@ Per-paper timing (1303.4571, 104 pages):
 - `src/collect.rs` — `RefHeadingLoc`, `find_all_reference_headings`, `has_refs_after` (citation scoring, 15-block limit), `gather_subsequent_pages`, `detect_marker_format` (peek-ahead), `is_standalone_ref_heading`, fallback marker collection (dense + trailing), `score_citation_block`, `has_citation_content`, `is_valid_trailing_cluster`
 - `src/markers.rs` — `collect_refs_by_markers` (3-strategy fallback: dense blocks → trailing scan → superscript pairs), `is_dense_ref_block` (marker count OR citation density), `find_superscript_pairs` (gap-tolerant backward scan), author-date blob splitting
 - `src/zones.rs` — `is_heading_text` (running header rejection, prefix/suffix number handling, colon stripping)
-- `src/parse.rs` — Token-based parser, multi-journal sub-ref extraction with position-based arXiv/DOI assignment, arXiv-only sub-refs, old-style volume splitting ("249B"), conference volume parsing
+- `src/parse.rs` — Token-based parser, multi-journal sub-ref extraction with position-based arXiv/DOI assignment, arXiv-only sub-refs, ibid/erratum sub-refs, old-style volume splitting ("249B"), conference volume parsing
+- `src/doi.rs` — DOI lookup via CrossRef bibliographic API, SQLite cache
 - `src/main.rs` — CLI, pipeline orchestration, `split_semicolon_subrefs`
 - `scripts/compare_refs.py` — Comparison (flexible journal/volume matching, abbreviation normalization, DOI matching)
 - `scripts/evaluate.sh` — Evaluation orchestrator (caches results in `tests/fixtures/results/`, invalidates on binary change)
