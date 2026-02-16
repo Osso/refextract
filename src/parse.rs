@@ -25,6 +25,11 @@ pub fn parse_references(raw: &RawReference, tokens: &[Token]) -> Vec<ParsedRefer
 
     extract_identifiers(tokens, &mut result);
     extract_journal_info(tokens, &mut result);
+    // A journal name without a volume is almost always a false positive
+    // (word like "Science" or "Computing" in a title). Clear it.
+    if result.journal_title.is_some() && result.journal_volume.is_none() {
+        result.journal_title = None;
+    }
     extract_authors(tokens, &mut result);
 
     let mut refs = vec![result.clone()];

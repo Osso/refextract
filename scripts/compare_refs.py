@@ -111,6 +111,12 @@ def normalize_journal(title: str) -> str:
         "jmolecspectrosc": "jmolspectrosc",
         "pramanajphys": "pramana",
         "hadronicj": "hadronj",
+        # Strip "direct" from Eur.Phys.J.direct (online-only = same as EPJ)
+        "eurphysjdirect": "eurphysj",
+        # Phys.Scripta Topical Issues → Phys.Scripta
+        "physscrtopissues": "physscrt",
+        # Naturwissenschaften full name → abbreviation
+        "naturwissenschaften": "naturwiss",
     }
     for full, short in equiv.items():
         if n.startswith(full):
@@ -249,6 +255,13 @@ def match_refs(inspire_refs: list[dict], extracted_refs: list[dict]) -> tuple[in
         for r in extracted_refs
         if r["journal"] and r["volume"]
     ]
+    # PoS normalization: "poslat" vol="2005" → also try "pos" vol="LAT2005"
+    pos_extra = []
+    for ej, ev in ext_jv:
+        if ej.startswith("pos") and len(ej) > 3:
+            suffix = ej[3:].upper()
+            pos_extra.append(("pos", suffix + ev))
+    ext_jv.extend(pos_extra)
 
     for iref in inspire_refs:
         # Try arXiv match first

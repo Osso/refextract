@@ -8,12 +8,16 @@
 - [ ] Context-aware journal validation — Words like `Physics`, `Energy`, `Science` in titles matching as journal names from KB. Need volume/year proximity check to filter false positives.
 
 ## Progress This Session
-- **Bibliography label splitting**: Added `find_biblio_label_positions` / `find_label_start` to split author-year bibliography blobs at "Surname et al. YYYY:" labels. Previously these multi-ref blobs stayed unsplit, causing garbled journal/arXiv assignment. 1406.6311 went from 1535→1630 matched (86%→91%).
-- **Running header tolerance in gather_subsequent_pages**: "References" text at top of appendix pages was triggering `is_standalone_ref_heading`, stopping page collection prematurely. Now defers stop until page content is checked — only stops if the page has actual ref content (real multi-chapter heading), skips otherwise (running header).
-- **Extended has_refs_after page range**: Changed from checking only 1 subsequent page to up to 3 subsequent pages with per-page block limits (15 blocks/page instead of 15 blocks total). Handles papers with appendix pages between heading and ref continuation. 1909.05610 went from 5→163 extracted, 7→78 matched (8%→98%).
-- **Net gain**: 90.0% → 90.1% (+167 matched refs this session)
+- **Expanded test set**: Downloaded 82 new papers (Instrumentation, Computing, Accelerators, General Physics, recent papers) to reach 1,000 papers. Recall held at 90% — model generalizes well across categories.
+- **Tokenizer refactor**: Extracted `try_compound_numeration()` from `classify_word()`. Added section-letter support in `VOLUME_COLON_PAGE_RE` for old-style formats like `76B:436`. +74 journal matches.
+- **Deep gap analysis on 1000 papers**: Confirmed theoretical ceiling at ~94%. Of ~13,339 unmatched refs: 45% have no identifiers, 18% DOI-only (editorial), 26% journal extraction gap (mostly from zero-extraction papers), 12% arXiv not extracted.
+- **KB cleanup**: Removed false positive entries (Quantum Mechanics, Computing London) that produced 191 false journal extractions across test set.
+- **Comparison improvements**: PoS normalization (pos+conf→pos vol=CONF+year), eurphysjdirect→eurphysj, physscrtopissues→physscrt, naturwissenschaften→naturwiss. +79 journal matches.
+- **Parser: require volume for journal output**: Cleared journal_title when no volume found. Eliminates 2,740 false positive journal-only extractions with zero recall cost.
+- **Net gain**: 90.1% → 90.3% (on expanded 1000-paper set; 123,566 → 123,643 matched)
 
 ## Previous Sessions
+- `1d81a30` — Tokenizer refactor: section-letter volume:page, try_compound_numeration extraction
 - `3be9f6b` — Biblio label splitting, running header tolerance, extended heading verification (90.0%→90.1%)
 - `fb24734` — Superscript marker gap tolerance (89.9%→90.0%)
 - `c2ae243` — Citation density for dense blocks, eval cache busting (89.4%→89.9%)
@@ -43,13 +47,13 @@
 ```
 Papers evaluated:     1,000 (0 errors)
 INSPIRE refs total:   136,982
-Extracted refs total: 162,226
-Matched by arXiv ID:  69,457 (51%)
-Matched by journal:   51,614 (38%)
+Extracted refs total: 162,182
+Matched by arXiv ID:  69,458 (51%)
+Matched by journal:   51,764 (38%)
 Matched by DOI:        2,421 (2%)
-Total recall:         123,492 / 136,982 (90.1%)
+Total matched:        123,643 / 136,982 (90.3%)
 ```
-Previous: 90.0% (123,325). +167 net matched refs this session.
+Previous: 123,566 (90.0%). +77 from comparison improvements and KB cleanup.
 
 ## Top 15 Missed Papers (at 90.1% recall)
 ```
@@ -71,18 +75,18 @@ Rank  Paper            INSPIRE  Matched  Missed  Recall%  Category
 15    1902.00134          1051      932     119    88%  Matching gap (118 no_id)
 ```
 
-## Gap Analysis (~13,490 unmatched INSPIRE refs)
+## Gap Analysis (~13,416 unmatched INSPIRE refs)
 - **No identifiers in INSPIRE** (5,954 / 44%): Refs with no arXiv, DOI, or journal+volume. Fundamentally unmatchable.
-- **DOI-only in INSPIRE** (2,368 / 17%): DOIs added editorially, not in PDF text.
-- **Journal extraction gap** (3,671 / 27%): INSPIRE has journal but it's not in extracted refs. Mostly the journal IS present in extracted data (same paper, different volumes) — meaning the specific ref isn't extracted. Top journals affected: Phys.Lett.B (421), Phys.Rev.Lett. (399), Nucl.Phys.B (315), Phys.Rev.D (242).
-- **ArXiv not in extracted** (1,664 / 12%): Spread across 346 papers. Top contributors are zero-extraction papers (hep-ph_9506380, 0704.3011).
-- **Theoretical ceiling** (~94%): Only ~5,335 refs (39% of gap) have identifiers AND could potentially be matched with perfect extraction. The rest are unfixable INSPIRE metadata issues.
+- **DOI-only in INSPIRE** (1,997 / 15%): DOIs added editorially, not in PDF text. Verified: doi.org URLs rarely appear in ref sections.
+- **Journal extraction gap** (3,876 / 29%): INSPIRE has journal+vol but not matched. ~50% from zero-extraction papers (no ref section found), ~50% specific ref not extracted. Top missed journals: Phys.Lett.B (517), Phys.Rev.Lett. (510), Phys.Rev.D (467), Nucl.Phys.B (444).
+- **ArXiv not in extracted** (1,589 / 12%): Spread across many papers. Top contributors are zero-extraction papers and papers where INSPIRE added arXiv IDs via record linking (not in PDF text).
+- **Theoretical ceiling** (~94%): Only ~7,462 refs (56% of gap) have identifiers and could potentially be matched. But many of these are from two-column/zero-extraction papers requiring structural fixes.
 
-## 0-Recall Paper Categories (~17 papers with >10 INSPIRE refs)
-1. **Image-based PDFs** (~10 papers): hep-ph_9506380, hep-ph_9306320, hep-th_9411108, hep-ph_9903282, hep-ph_9507378, hep-lat_* papers. Old (1993-1999). Unsolvable without OCR.
-2. **No reference heading** (~3 papers): 0704.3011 (fragmented math), 0802.0007. No "References" heading and refs not caught by fallback scans.
-3. **INSPIRE metadata empty** (~2 papers): 1003.3928 (121 refs, all empty). 1310.7534 (35 refs). Extraction works but nothing to match against.
-4. **Other** (~2 papers): 0711.3596 (55 refs, complex format), hep-ex_0012035 (12 refs).
+## 0-Recall Paper Categories (14 papers with >10 INSPIRE refs)
+1. **Two-column interleaving** (3 papers): 0704.3011 (575 refs), 0802.0007 (122), 0711.3596 (55). pdfium interleaves columns, garbling text. Text IS extractable (pdftotext works).
+2. **Image-based/Type3 font PDFs** (~7 papers): hep-ph_9506380, hep-ph_9306320, hep-th_9411108, hep-ph_9903282, hep-ph_9507378, hep-lat_9605038, hep-lat_9609035, hep-lat_9309005, hep-lat_9310022, hep-lat_9308011. pdfium extracts <10 blocks from 30-50 page papers. Unsolvable without OCR.
+3. **INSPIRE metadata empty** (2 papers): 1003.3928 (121 refs), 1310.7534 (35 refs). Extraction works, nothing to match against.
+4. **Other** (2 papers): hep-ex_0012035 (12 refs), 1102.1523 (4 refs).
 
 ## Key Decisions
 - **4-digit markers**: `[N]` and `(N)` allow `\d{1,4}` for review papers. Bare `N.` stays at `\d{1,3}` — 4-digit bare numbers like `2024.` would match years.
@@ -124,6 +128,7 @@ Per-paper timing (1303.4571, 104 pages):
 - Each eval invocation re-initializes KB (Lazy static per process). Batch mode would amortize.
 
 ## Commits
+- `1d81a30` — Tokenizer refactor: section-letter volume:page, try_compound_numeration extraction (+74 journal matches)
 - `3be9f6b` — Biblio label splitting, running header tolerance, extended heading verification (90.0%→90.1%)
 - `fb24734` — Superscript marker gap tolerance (89.9%→90.0%)
 - `c2ae243` — Citation density for dense blocks, eval cache busting (89.4%→89.9%)
@@ -150,10 +155,10 @@ Per-paper timing (1303.4571, 104 pages):
 - `65b1a65` — Initial implementation of layout-aware HEP reference extractor
 
 ## Next Steps (by estimated impact)
-1. **Two-column layout support** (~1,300 refs from 17 zero-extraction papers) — biggest structural challenge, requires column deinterleaving in layout.rs
-2. **Per-paper layout failures** — appendix pages interleaved (1909.05610: 79 refs), no heading (0704.3011: 575 refs), chapter-end refs. Each affects 1-5 papers.
-3. **Context-aware journal validation** (require volume/year near journal match to filter false positives)
-4. **Batch mode** to amortize KB init cost
+1. **Two-column layout support** (~750 refs from 3 text-extractable zero-extraction papers: 0704.3011, 0802.0007, 0711.3596) — pdfium interleaves columns. Need column deinterleaving in layout.rs. Also affects 1204.4325 (262 missed, 40% recall).
+2. **Context-aware journal validation** (require volume/year near journal match to filter false positives — reduces over-extraction noise)
+3. **Comparison methodology improvement** — INSPIRE often has arXiv IDs for refs where the PDF only has journal+vol. Round-trip matching (look up cited paper's journal from arXiv) would increase measured recall without code changes.
+4. **Batch mode** to amortize KB init cost (~500ms per invocation)
 5. **Prefix trie** for report number matching (skip most patterns without regex)
 
 ## Technical Context
