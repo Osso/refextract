@@ -96,6 +96,7 @@ fn has_refs_after(
 ) -> bool {
     let mut checked = 0;
     let mut citation_score = 0;
+    // Check remaining blocks on the heading page.
     for zb in &zoned_pages[page_idx][block_idx + 1..] {
         if zb.zone == ZoneKind::Header || zb.zone == ZoneKind::PageNumber {
             continue;
@@ -109,8 +110,12 @@ fn has_refs_after(
             break;
         }
     }
-    if page_idx + 1 < zoned_pages.len() {
-        for zb in &zoned_pages[page_idx + 1] {
+    // Check up to 3 subsequent pages (handles appendix pages between
+    // heading and continuation of references).
+    let end = (page_idx + 4).min(zoned_pages.len());
+    for next_page in &zoned_pages[page_idx + 1..end] {
+        let mut page_checked = 0;
+        for zb in next_page {
             if zb.zone == ZoneKind::Header || zb.zone == ZoneKind::PageNumber {
                 continue;
             }
@@ -118,8 +123,8 @@ fn has_refs_after(
             if citation_score >= 4 {
                 return true;
             }
-            checked += 1;
-            if checked >= 15 {
+            page_checked += 1;
+            if page_checked >= 15 {
                 break;
             }
         }
@@ -197,13 +202,17 @@ fn gather_subsequent_pages(
         let mut page_blocks_buf = Vec::new();
         let mut page_citation_lines = 0;
         let mut page_total_lines = 0;
+        let mut saw_heading = false;
         for zb in page_blocks {
             if zb.zone == ZoneKind::Header || zb.zone == ZoneKind::PageNumber {
                 continue;
             }
             if is_standalone_ref_heading(&zb.block) {
-                ref_blocks.extend(page_blocks_buf);
-                return;
+                // Don't stop immediately — the heading might be a running
+                // header (e.g., "References" at top of an appendix page).
+                // Only stop if the page also has reference content.
+                saw_heading = true;
+                continue;
             }
             if use_markers {
                 if has_any_marker(&zb.block) {
@@ -224,6 +233,13 @@ fn gather_subsequent_pages(
             && page_citation_lines * 2 >= page_total_lines
         {
             page_has_refs = true;
+        }
+        // A standalone heading on a page WITH ref content means a real
+        // second ref section — stop before it (multi-chapter documents).
+        // A heading on a page WITHOUT ref content is a running header — skip it.
+        if saw_heading && page_has_refs {
+            ref_blocks.extend(page_blocks_buf);
+            return;
         }
         if page_has_refs {
             ref_blocks.extend(page_blocks_buf);

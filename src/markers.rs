@@ -402,6 +402,12 @@ static AUTHOR_START_NOCOMMA_RE: Lazy<Regex> = Lazy::new(|| {
     Regex::new(r"[A-Z][a-z]{2,}(?:[\s-][A-Z][a-z]+)* [A-Z]\.").unwrap()
 });
 
+/// Bibliography label year-colon ending: "2005:" or "2013a:" at the end
+/// of a cite key label like "Aaij et al. 2013c:".
+static BIBLIO_YEAR_COLON_RE: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r"(?:19|20)\d{2}[a-z]?\s*:").unwrap()
+});
+
 fn split_author_date_text(text: &str) -> Vec<String> {
     let split_positions = find_author_split_positions(text);
 
@@ -444,8 +450,109 @@ fn find_author_split_positions(text: &str) -> Vec<usize> {
         }
     }
 
+    // Bibliography labels: "Surname et al. YYYY:" or "Surname and Foo YYYY:"
+    for pos in find_biblio_label_positions(text) {
+        if !positions.contains(&pos) {
+            positions.push(pos);
+        }
+    }
+
     positions.sort_unstable();
     positions
+}
+
+/// Find split positions for bibliography labels ending with "YYYY[a-z]:".
+/// Scans backward from each year-colon to find the start of the label
+/// (first uppercase word after a reference boundary).
+fn find_biblio_label_positions(text: &str) -> Vec<usize> {
+    let mut positions = Vec::new();
+    for m in BIBLIO_YEAR_COLON_RE.find_iter(text) {
+        if let Some(pos) = find_label_start(text, m.start()) {
+            if pos > 0 {
+                let before = text[..pos].trim_end();
+                if !before.is_empty() && is_ref_boundary(before) {
+                    positions.push(pos);
+                }
+            }
+        }
+    }
+    positions
+}
+
+/// Scan backward from `year_pos` to find the start of a bibliography label.
+/// Labels look like: "Surname et al." / "Surname and Foo" / "Surname, Foo, and Bar"
+/// followed by the year. Returns the byte offset of the first surname character.
+fn find_label_start(text: &str, year_pos: usize) -> Option<usize> {
+    let before = &text[..year_pos];
+    // Walk backward past spaces, "et al.", "and Name", commas, author names
+    let trimmed = before.trim_end();
+    if trimmed.is_empty() {
+        return None;
+    }
+
+    // The label is a sequence of words ending at the year. We scan backward
+    // through words, accepting: uppercase names, "et", "al.", "and", commas,
+    // hyphens within names. Stop at a word that can't be part of a label.
+    let bytes = trimmed.as_bytes();
+    let mut pos = bytes.len();
+
+    loop {
+        // Skip trailing whitespace and commas
+        while pos > 0 && matches!(bytes[pos - 1], b' ' | b',' | b'\t') {
+            pos -= 1;
+        }
+        if pos == 0 {
+            break;
+        }
+
+        // Try to consume a word backward
+        let word_end = pos;
+        while pos > 0 && !matches!(bytes[pos - 1], b' ' | b',' | b'\t') {
+            pos -= 1;
+        }
+        let word = &trimmed[pos..word_end];
+
+        // Accept: "et", "al.", "and", "de", "di", "von", "van", "le", "la"
+        let word_lower = word.to_lowercase();
+        let is_connector = matches!(
+            word_lower.as_str(),
+            "et" | "al." | "and" | "de" | "di" | "du" | "von" | "van" | "le" | "la"
+        );
+        if is_connector {
+            continue;
+        }
+
+        // Accept: capitalized word (possibly hyphenated, like "Aguilar-Benitez")
+        let is_name = word
+            .split('-')
+            .all(|part| {
+                let mut chars = part.chars();
+                chars.next().map_or(false, |c| c.is_ascii_uppercase())
+                    && chars.all(|c| c.is_alphanumeric() || c == '\'')
+            });
+        if is_name {
+            continue;
+        }
+
+        // Not a label word — the label starts after this point
+        // Restore pos to word_end (we consumed a non-label word)
+        pos = word_end;
+        break;
+    }
+
+    // Skip any leading whitespace/commas after the boundary
+    while pos < trimmed.len() && matches!(trimmed.as_bytes()[pos], b' ' | b',' | b'\t') {
+        pos += 1;
+    }
+
+    // Compute the byte offset in the original text
+    // `trimmed` is `before.trim_end()` which is `text[..year_pos].trim_end()`
+    // `pos` is relative to `trimmed`, which starts at byte 0 of `text`
+    if pos < trimmed.len() {
+        Some(pos)
+    } else {
+        None
+    }
 }
 
 fn validate_split_position(text: &str, author_pos: usize) -> Option<usize> {
