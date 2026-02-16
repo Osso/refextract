@@ -11,7 +11,7 @@ static ARXIV_NEW_RE: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"\d{4}\.\d{4,5}(?:v\d+)?").unwrap());
 
 static ARXIV_OLD_RE: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"(?:hep|astro|cond|gr|math|nucl|physics|quant|cs|nlin|q-bio|q-fin|stat)(?:[\s.\-][a-z]{2,3})?[\s/]+\d{7}(?:v\d+)?").unwrap()
+    Regex::new(r"(?:hep|astro|cond|gr|math|nucl|physics|quant|cs|nlin|q-bio|q-fin|q-alg|alg-geom|solv-int|chao-dyn|adap-org|comp-gas|patt-sol|funct-an|dg-ga|mtrl-th|supr-con|acc-phys|ao-sci|bayes-an|chem-ph|plasm-ph|atom-ph|stat)(?:[\s.\-][a-z]{2,4})?[\s/]+\d{7}(?:v\d+)?").unwrap()
 });
 
 static URL_RE: Lazy<Regex> =
