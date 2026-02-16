@@ -1,0 +1,49 @@
+name: CI
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+  PDFIUM_LIB_PATH: /usr/local/lib/libpdfium.so
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install pdfium
+        run: |
+          curl -sL "https://github.com/bblanchon/pdfium-binaries/releases/latest/download/pdfium-linux-x64.tgz" \
+            -o /tmp/pdfium.tgz
+          sudo tar xzf /tmp/pdfium.tgz -C /usr/local lib/libpdfium.so
+          sudo ldconfig
+
+      - name: cargo check
+        run: cargo check
+
+      - name: cargo clippy
+        run: cargo clippy -- -D warnings
+
+      - name: cargo test
+        run: cargo test
+
+      - name: Download test PDF
+        run: curl -sL -o /tmp/test.pdf "https://arxiv.org/pdf/1001.0785"
+
+      - name: Extract references
+        run: |
+          cargo run -- /tmp/test.pdf > /tmp/refs.json
+          count=$(python3 -c "import json; print(len(json.load(open('/tmp/refs.json'))))")
+          echo "Extracted $count references"
+          if [ "$count" -lt 10 ]; then
+            echo "ERROR: expected at least 10 references, got $count"
+            exit 1
+          fi
