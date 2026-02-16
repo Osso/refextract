@@ -49,11 +49,11 @@ Papers evaluated:     1,000 (0 errors)
 INSPIRE refs total:   136,982
 Extracted refs total: 162,182
 Matched by arXiv ID:  69,458 (51%)
-Matched by journal:   51,764 (38%)
+Matched by journal:   51,781 (38%)
 Matched by DOI:        2,421 (2%)
-Total matched:        123,643 / 136,982 (90.3%)
+Total matched:        123,660 / 136,982 (90.3%)
 ```
-Previous: 123,566 (90.0%). +77 from comparison improvements and KB cleanup.
+Previous: 123,566 (90.0%). +94 from comparison improvements, KB cleanup, parser fix.
 
 ## Top 15 Missed Papers (at 90.1% recall)
 ```
@@ -75,12 +75,12 @@ Rank  Paper            INSPIRE  Matched  Missed  Recall%  Category
 15    1902.00134          1051      932     119    88%  Matching gap (118 no_id)
 ```
 
-## Gap Analysis (~13,416 unmatched INSPIRE refs)
-- **No identifiers in INSPIRE** (5,954 / 44%): Refs with no arXiv, DOI, or journal+volume. Fundamentally unmatchable.
-- **DOI-only in INSPIRE** (1,997 / 15%): DOIs added editorially, not in PDF text. Verified: doi.org URLs rarely appear in ref sections.
-- **Journal extraction gap** (3,876 / 29%): INSPIRE has journal+vol but not matched. ~50% from zero-extraction papers (no ref section found), ~50% specific ref not extracted. Top missed journals: Phys.Lett.B (517), Phys.Rev.Lett. (510), Phys.Rev.D (467), Nucl.Phys.B (444).
-- **ArXiv not in extracted** (1,589 / 12%): Spread across many papers. Top contributors are zero-extraction papers and papers where INSPIRE added arXiv IDs via record linking (not in PDF text).
-- **Theoretical ceiling** (~94%): Only ~7,462 refs (56% of gap) have identifiers and could potentially be matched. But many of these are from two-column/zero-extraction papers requiring structural fixes.
+## Gap Analysis (~13,322 unmatched INSPIRE refs)
+- **No identifiers in INSPIRE** (5,954 / 45%): Refs with no arXiv, DOI, or journal+volume. Fundamentally unmatchable.
+- **DOI-only in INSPIRE** (2,360 / 18%): DOIs added editorially, not in PDF text.
+- **Journal extraction gap** (3,441 / 26%): INSPIRE has journal+vol but not matched. Top ~1,500 from zero-extraction papers (image-based, two-column). Remaining ~2,000 spread across 630 papers (~3/paper avg). Top missed journals: Phys.Lett.B, Phys.Rev.Lett., Phys.Rev.D, Nucl.Phys.B.
+- **ArXiv not in extracted** (1,567 / 12%): Mostly INSPIRE record-linking (arXiv not in PDF text) or zero-extraction papers.
+- **Theoretical ceiling** (~94%): Only ~7,368 refs (55% of gap) have identifiers. ~1,500 from zero-extraction papers (two-column/image-based), rest scattered across many papers.
 
 ## 0-Recall Paper Categories (14 papers with >10 INSPIRE refs)
 1. **Two-column interleaving** (3 papers): 0704.3011 (575 refs), 0802.0007 (122), 0711.3596 (55). pdfium interleaves columns, garbling text. Text IS extractable (pdftotext works).

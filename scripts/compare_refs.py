@@ -100,9 +100,12 @@ def normalize_journal(title: str) -> str:
         "highenergyphysnuclphys": "hepnp",
         "highenergyphysnuclphysbeijing": "hepnp",
         "ieeetransinftheor": "ieeetransinfotheor",
-        # Soviet → modern journal equivalences
+        # Soviet/Russian → modern journal equivalences
         "sovphysjetp": "jexptheorphys",
         "sovphysusp": "physusp",
+        "yadfiz": "physatnucl",
+        "sovjnuclphys": "physatnucl",
+        "zhekspteorfiz": "jexptheorphys",
         # Full name → abbreviation
         "progtheorexpphys": "ptep",
         "procspieintsocopteng": "procspie",
