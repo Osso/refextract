@@ -6,13 +6,14 @@
 - [ ] INSPIRE metadata gaps — 2103.01183 (951 missed: DOI-only), 2006.11237 (118: DOI-only), 1905.08669 (112: DOI-only), 1003.3928 (121 refs: empty metadata). Comparison methodology issue, not extraction bug.
 - [ ] Context-aware journal validation — Words like `Physics`, `Energy`, `Science` in titles matching as journal names from KB. Need volume/year proximity check to filter false positives.
 
-## Progress This Session (90.4% → 90.4%)
+## Progress This Session (90.4% → 90.5%)
 - **Two-column layout investigation**: Investigated character-level column reordering for two-column papers. Found that pdfium does NOT interleave characters between columns — chars arrive per-column (left then right) with only 1-2 column switches per page. The existing `split_columns` at the line level already handles this correctly.
 - **Backward-jump word break**: Added safety check in `group_chars_into_words` that breaks a word when the next character's right edge is to the left of the word's start x-position. Prevents corrupted words from occasional backward x-jumps. +5 matches.
 - **Column reorder rejected**: Character-level reorder (`reorder_for_columns` + `detect_char_column_boundary`) was implemented, tested, and removed — it caused -12 net regressions by disrupting block boundaries on papers where reference sections span both columns.
 - **Root cause of "two-column" zero-extraction papers**: 0704.3011 (575 refs), 0802.0007 (122), 0711.3596 (55) — pdfium extracts only spaces from reference pages (Type3 fonts or outlined text). This is a text extraction limitation, not a layout issue. No layout fix can help.
 - **Refactored `group_chars_into_words`** to accept `&[PdfChar]` instead of `&PageChars` for flexibility.
-- **Net gain**: 123,795 → 123,800 (+5 matches, 90.4%)
+- **Cross-reference ibid resolution**: Parse standalone "ibid. V, P (Y)" refs (from semicolon splitting) with placeholder journal, then resolve by inheriting journal from nearest prior ref with same linemarker. +98 matches, 0 regressions, 43 papers improved.
+- **Net gain**: 123,795 → 123,898 (+103 matches, 90.4% → 90.5%)
 
 ## Previous Session (90.1% → 90.4%)
 - **Ibid/erratum sub-reference extraction**: Recognize `[Erratum-ibid, V, P (Y)]` and `ibid., V, P (Y)` patterns as sub-references inheriting the primary's journal title. Extended tokenizer to match `Erratum-ibid`, `Addendum-ibid`, `Erratum:ibid` as Ibid tokens. +43 matches.
@@ -69,11 +70,11 @@ Papers evaluated:     1,000 (0 errors)
 INSPIRE refs total:   136,982
 Extracted refs total: 162,705
 Matched by arXiv ID:  69,541 (51%)
-Matched by journal:   51,838 (38%)
+Matched by journal:   51,936 (38%)
 Matched by DOI:        2,421 (2%)
-Total matched:        123,800 / 136,982 (90.4%)
+Total matched:        123,898 / 136,982 (90.5%)
 ```
-Previous: 123,795. +5 from backward-jump word break.
+Previous: 123,800. +98 from ibid resolution (+5 from backward-jump word break).
 
 ## Top 15 Missed Papers (at 90.1% recall)
 ```
@@ -152,6 +153,9 @@ Per-paper timing (1303.4571, 104 pages):
 - Each eval invocation re-initializes KB (Lazy static per process). Batch mode would amortize.
 
 ## Commits
+- `b92c177` — Resolve ibid journal references from semicolon-split sub-refs (+98)
+- `c56fdf8` — Update README with two-column layout detection
+- `6cf38fb` — Add backward-jump word break in layout (+5)
 - `57abff8` — Skip DOI lookup in evaluation (--no-doi-lookup)
 - `209cd30` — DOI lookup via CrossRef with SQLite cache
 - `19602da` — Journal KB entries, Nature abbreviation fixes, Erratum:ibid support (+8)
@@ -191,10 +195,9 @@ Per-paper timing (1303.4571, 104 pages):
 
 ## Next Steps (by estimated impact)
 1. **Alternative text extraction for Type3/outlined PDFs** (~750 refs from 0704.3011, 0802.0007, 0711.3596) — pdfium returns only spaces from reference pages. Could try poppler/pdftotext as fallback when pdfium yields empty pages. **Biggest remaining win**, but requires new dependency.
-2. **Cross-reference ibid resolution** (~8 refs) — Ibid in separate raw_ref (split by `;`) doesn't inherit journal from prior raw_ref with same linemarker. Low impact.
-3. **Batch mode** to amortize KB init cost (~500ms per invocation)
-4. **Prefix trie** for report number matching (skip most patterns without regex)
-5. **Note**: Only 424 of 13,187 unmatched refs are genuinely fixable. Diminishing returns ahead.
+2. **Context-aware journal validation** — Words like `Physics`, `Energy`, `Science` in titles match as journal names from KB. Need volume/year proximity check to filter false positives.
+3. **Prefix trie** for report number matching (skip most patterns without regex)
+4. **Note**: Only 424 of 13,187 unmatched refs are genuinely fixable. Diminishing returns ahead.
 
 ## Technical Context
 
