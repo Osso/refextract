@@ -6,16 +6,15 @@
 - [ ] INSPIRE metadata gaps — 2103.01183 (951 missed: DOI-only), 2006.11237 (118: DOI-only), 1905.08669 (112: DOI-only), 1003.3928 (121 refs: empty metadata). Comparison methodology issue, not extraction bug.
 - [ ] Context-aware journal validation — Words like `Physics`, `Energy`, `Science` in titles matching as journal names from KB. Need volume/year proximity check to filter false positives.
 
-## Progress This Session (90.4% → 90.5%)
-- **Two-column layout investigation**: Investigated character-level column reordering for two-column papers. Found that pdfium does NOT interleave characters between columns — chars arrive per-column (left then right) with only 1-2 column switches per page. The existing `split_columns` at the line level already handles this correctly.
-- **Backward-jump word break**: Added safety check in `group_chars_into_words` that breaks a word when the next character's right edge is to the left of the word's start x-position. Prevents corrupted words from occasional backward x-jumps. +5 matches.
-- **Column reorder rejected**: Character-level reorder (`reorder_for_columns` + `detect_char_column_boundary`) was implemented, tested, and removed — it caused -12 net regressions by disrupting block boundaries on papers where reference sections span both columns.
-- **Root cause of "two-column" zero-extraction papers**: 0704.3011 (575 refs), 0802.0007 (122), 0711.3596 (55) — pdfium extracts only spaces from reference pages (Type3 fonts or outlined text). This is a text extraction limitation, not a layout issue. No layout fix can help.
-- **Refactored `group_chars_into_words`** to accept `&[PdfChar]` instead of `&PageChars` for flexibility.
-- **Cross-reference ibid resolution**: Parse standalone "ibid. V, P (Y)" refs (from semicolon splitting) with placeholder journal, then resolve by inheriting journal from nearest prior ref with same linemarker. +98 matches, 0 regressions, 43 papers improved.
-- **Context-aware journal validation**: Suppress single title-case common English words ("Science", "Nature", "Sciences") when followed by a capitalized word, indicating compound name not in KB. Added Science Advances KB entry. -188 false positive extractions, 0 net regressions.
-- **Parenthesized range heading detection**: Recognize headings like "References (36)-(84)" by stripping trailing (N)-(N) patterns. Fixes supplementary reference sections separated from main refs by appendix pages. +37 matches from 1708.01294.
-- **Net gain**: 123,795 → 123,935 (+140 matches, 90.4% → 90.5%)
+## Progress This Session (90.5%)
+- **Marker scan strategy optimization**: Compare dense vs trailing scan results by marker count instead of short-circuiting on first success. The fallback pipeline previously stopped at first non-empty result; now it evaluates both strategies and picks the one with more markers. Fixes cases like hep-ex_0602035 (5→62 refs). +57 matches.
+- **Fallback threshold raised**: Increased TOC false-positive heading threshold from 5 to 10. Reduces spurious references from table-of-contents sections with dense but low-value entries.
+- **Bare arXiv format parsing**: Added support for "arXiv:0510213 [hep-ph]" format (colon prefix, category in brackets). Converts to "hep-ph/0510213". Extends arXiv ID extraction.
+- **Lowercase journal name matching**: Fixed case-sensitivity in journal matching. KB now matches "npj Quantum Inf." and similar mixed-case journal names. Added UTF-8 char boundary fix during journal span detection.
+- **Quantum journal KB entry**: Added "Quantum" journal to KB (common in quantum computing papers).
+- **Comparison script improvements**: Fixed annphysleipzig equivalence chain, added Fortschritte journal equivalence for normalization.
+- **Investigation: worst-recall papers**: Papers with 2006.11237 (98 refs, 14% recall), 1905.08669 (112 refs, 6%), 1905.08255 (115 refs, 2%), 1911.11977 (127 refs, 6%) are limited by INSPIRE metadata — their refs have DOIs only, no arXiv IDs or journal+volume data in INSPIRE. Not fixable from extraction side.
+- **Net gain**: 123,935 → 123,992 (+57 matches, 90.5%)
 
 ## Previous Session (90.1% → 90.4%)
 - **Ibid/erratum sub-reference extraction**: Recognize `[Erratum-ibid, V, P (Y)]` and `ibid., V, P (Y)` patterns as sub-references inheriting the primary's journal title. Extended tokenizer to match `Erratum-ibid`, `Addendum-ibid`, `Erratum:ibid` as Ibid tokens. +43 matches.
@@ -70,13 +69,12 @@
 ```
 Papers evaluated:     1,000 (0 errors)
 INSPIRE refs total:   136,982
-Extracted refs total: 162,566
-Matched by arXiv ID:  69,542 (51%)
-Matched by journal:   51,972 (38%)
+Extracted refs total: 162,592
+Matched by arXiv ID:  69,613 (51%)
+Matched by journal:   52,029 (38%)
 Matched by DOI:        2,421 (2%)
-Total matched:        123,935 / 136,982 (90.5%)
+Total matched:        123,992 / 136,982 (90.5%)
 ```
-Previous: 123,898. +37 from paren-range heading detection.
 
 ## Top 15 Missed Papers (at 90.1% recall)
 ```
@@ -145,6 +143,11 @@ Rank  Paper            INSPIRE  Matched  Missed  Recall%  Category
 - **Extended heading verification**: `has_refs_after` checks up to 3 subsequent pages (not just 1) with per-page 15-block limit. Handles appendix pages between heading and ref continuation.
 - **No character-level column reorder**: pdfium delivers chars per-column (left then right, 1-2 switches per page), NOT interleaved. Character reordering was tested and caused -12 net regressions by disrupting reference section block boundaries. The existing `split_columns` at line level is sufficient.
 - **Backward-jump word break**: Break word when `(ch.x + ch.width) < acc.x` — the new char's right edge is left of the word start. Protects against occasional backward x-jumps without false positives on subscripts.
+- **Marker scan comparison**: Dense vs trailing scan fallback now compares final marker counts instead of stopping at first non-empty result. Evaluates both strategies before picking best.
+- **Fallback threshold increased to 10**: Prevents table-of-contents sections with dense but low-quality ref-like entries from being misclassified.
+- **Bare arXiv format support**: "arXiv:0510213 [hep-ph]" → "hep-ph/0510213" conversion for papers using colon-prefixed format with category suffix.
+- **Lowercase journal matching**: Fixed case-sensitivity in journal KB lookup; now matches mixed-case names like "npj Quantum Inf.". Added UTF-8 char boundary safety in journal span detection.
+- **Quantum journal KB entry**: Added standalone "Quantum" journal entry for quantum computing papers.
 
 ## Performance Profile
 Per-paper timing (1303.4571, 104 pages):
@@ -155,6 +158,8 @@ Per-paper timing (1303.4571, 104 pages):
 - Each eval invocation re-initializes KB (Lazy static per process). Batch mode would amortize.
 
 ## Commits
+- `5fab80f` — Parse bare arXiv format, fix lowercase journal matching, add Quantum KB (+71)
+- `06e176c` — Compare marker scan strategies by count instead of short-circuiting (+57)
 - `81d6d76` — Detect reference headings with parenthesized number ranges (+37)
 - `e2b47c3` — Suppress false-positive journal matches for common English words, add Sci. Adv. KB entry
 - `b92c177` — Resolve ibid journal references from semicolon-split sub-refs (+98)
@@ -198,10 +203,10 @@ Per-paper timing (1303.4571, 104 pages):
 - `65b1a65` — Initial implementation of layout-aware HEP reference extractor
 
 ## Next Steps (by estimated impact)
-1. **OCR fallback for Type3/outlined PDFs** (~750 refs from 0704.3011, 0802.0007, 0711.3596) — pdfium text extraction API returns 0 usable chars for reference pages despite visual rendering being correct (verified in Chrome). Font ToUnicode/CMap mapping is broken for these Type3 fonts, so `unicode_char()` returns None. pdftotext also fails (drops chars like "c"). Approach: detect pages with 0 extracted chars → render to bitmap via pdfium's rendering API → OCR with tesseract. Adds tesseract as runtime dependency.
+1. **Investigate medium-recall papers (60-80%)** — Diminishing returns but potentially fixable. Gap analysis shows only 424 of 13,187 unmatched refs are genuinely fixable (journal+volume in INSPIRE with raw text). Most low-recall papers are INSPIRE metadata limited.
 2. **Context-aware journal validation** — Words like `Physics`, `Energy`, `Science` in titles match as journal names from KB. Need volume/year proximity check to filter false positives.
 3. **Prefix trie** for report number matching (skip most patterns without regex)
-4. **Note**: Only 424 of 13,187 unmatched refs are genuinely fixable. Diminishing returns ahead.
+4. **Note**: OCR task deferred. Estimated 750 refs from Type3/outlined PDFs but adds tesseract runtime dependency.
 
 ## Technical Context
 
