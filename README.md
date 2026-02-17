@@ -65,7 +65,7 @@ Includes knowledge bases from the [Python refextract](https://github.com/inspire
 ## How It Works
 
 1. **PDF extraction** (`pdf.rs`): Load PDF via pdfium, extract every character with bounding box and font size
-2. **Layout grouping** (`layout.rs`): Group characters into words, words into lines, lines into blocks based on spatial proximity
+2. **Layout grouping** (`layout.rs`): Group characters into words, words into lines, lines into blocks based on spatial proximity. Detects two-column layouts and reorders into reading order
 3. **Zone classification** (`zones.rs`): Classify blocks as header, body, footnote, or page number based on position and font size
 4. **Reference collection** (`collect.rs`): Find "References" heading, split following text by line markers (`[1]`, `1.`, etc.)
 5. **Tokenization** (`tokenizer.rs`): Classify tokens as DOI, arXiv ID, journal name, year, page range, etc.
