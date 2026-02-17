@@ -302,8 +302,8 @@ pub fn match_journal_name(text: &str, pos: usize) -> Option<(usize, String)> {
 }
 
 fn match_full_journal(suffix: &str) -> Option<(usize, String)> {
-    // Must start with an uppercase letter (journal names are capitalized)
-    if !suffix.as_bytes().first().is_some_and(|b| b.is_ascii_uppercase()) {
+    // Must start with a letter (some journals like "npj Quantum Inf." start lowercase)
+    if !suffix.as_bytes().first().is_some_and(|b| b.is_ascii_alphabetic()) {
         return None;
     }
     let normalized = normalize_abbrev(suffix);
@@ -321,9 +321,9 @@ fn match_full_journal(suffix: &str) -> Option<(usize, String)> {
 }
 
 fn match_abbrev_journal(suffix: &str) -> Option<(usize, String)> {
-    // First char of suffix must be start of a word (uppercase letter)
+    // First char must be a letter (some abbreviations like "npj" start lowercase)
     let first = suffix.as_bytes().first()?;
-    if !first.is_ascii_uppercase() {
+    if !first.is_ascii_alphabetic() {
         return None;
     }
 

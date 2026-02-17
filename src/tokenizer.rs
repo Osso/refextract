@@ -14,6 +14,11 @@ static ARXIV_OLD_RE: Lazy<Regex> = Lazy::new(|| {
     Regex::new(r"(?:hep|astro|cond|gr|math|nucl|physics|quant|cs|nlin|q-bio|q-fin|q-alg|alg-geom|solv-int|chao-dyn|adap-org|comp-gas|patt-sol|funct-an|dg-ga|mtrl-th|supr-con|acc-phys|ao-sci|bayes-an|chem-ph|plasm-ph|atom-ph|stat)(?:[\s.\-][a-z]{2,4})?[\s/]+\d{7}(?:v\d+)?").unwrap()
 });
 
+/// Matches bare arXiv format: "arXiv:0510213 [hep-ph]" — 7-digit number with bracketed category
+static ARXIV_BARE_RE: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r"(?i)arXiv:(\d{7})\s*\[([a-z-]+(?:\.[a-zA-Z-]+)?)\]").unwrap()
+});
+
 static URL_RE: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"https?://[^\s,;]+").unwrap());
 
@@ -106,6 +111,7 @@ fn find_identifier_spans(text: &str) -> Vec<Span> {
     add_regex_spans(&mut spans, text, &URL_RE, TokenKind::Url);
     convert_arxiv_url_spans(&mut spans);
     add_arxiv_old_spans(&mut spans, text);
+    add_arxiv_bare_spans(&mut spans, text);
     add_regex_spans(&mut spans, text, &ARXIV_NEW_RE, TokenKind::ArxivId);
     add_regex_spans(&mut spans, text, &ISBN_RE, TokenKind::Isbn);
     add_report_number_spans(&mut spans, text);
@@ -167,6 +173,25 @@ fn add_arxiv_old_spans(spans: &mut Vec<Span>, text: &str) {
             // Normalize: replace whitespace between category parts with hyphens,
             // and ensure single slash separator before digits
             let normalized = normalize_arxiv_old(&raw);
+            spans.push(Span {
+                start: m.start(),
+                end: m.end(),
+                kind: TokenKind::ArxivId,
+                text: normalized,
+                normalized: None,
+            });
+        }
+    }
+}
+
+/// Add bare arXiv ID spans: "arXiv:0510213 [hep-ph]" → ArxivId "hep-ph/0510213"
+fn add_arxiv_bare_spans(spans: &mut Vec<Span>, text: &str) {
+    for caps in ARXIV_BARE_RE.captures_iter(text) {
+        let m = caps.get(0).unwrap();
+        if !overlaps_existing(spans, m.start(), m.end()) {
+            let number = &caps[1];
+            let category = &caps[2];
+            let normalized = format!("{category}/{number}");
             spans.push(Span {
                 start: m.start(),
                 end: m.end(),
@@ -243,6 +268,10 @@ fn add_journal_name_spans(spans: &mut Vec<Span>, text: &str) {
         }
         if let Some((len, abbrev)) = kb::match_journal_name(text, pos) {
             let (len, abbrev) = extend_section_letter(text, pos, len, abbrev);
+            if !text.is_char_boundary(pos + len) {
+                pos += 1;
+                continue;
+            }
             if embedded_in_compound_name(text, pos, len) {
                 pos += 1;
                 continue;
@@ -267,6 +296,9 @@ fn add_journal_name_spans(spans: &mut Vec<Span>, text: &str) {
 /// "LSST Science Collaboration"). Only applies to title-case single words
 /// (4+ chars, no dots) — abbreviations like "AIP", "Proc." are exempt.
 fn embedded_in_compound_name(text: &str, pos: usize, len: usize) -> bool {
+    if !text.is_char_boundary(pos) || !text.is_char_boundary(pos + len) {
+        return false;
+    }
     let matched = text[pos..pos + len].trim();
     if matched.len() < 4 || matched.contains('.') {
         return false;

@@ -95,7 +95,7 @@ def normalize_journal(title: str) -> str:
         "natphys": "naturephys",
         "nuovcimlett": "lettnuovcim",
         "nuovcimriv": "rivnuovcim",
-        "annphysleipzig": "annalenphys",
+        "annphysleipzig": "annphys",
         "annphysnewyork": "annphys",
         "highenergyphysnuclphys": "hepnp",
         "highenergyphysnuclphysbeijing": "hepnp",
@@ -120,6 +120,8 @@ def normalize_journal(title: str) -> str:
         "physscrtopissues": "physscrt",
         # Naturwissenschaften full name → abbreviation
         "naturwissenschaften": "naturwiss",
+        # Fortschritte der Physik → Fortsch.Phys.
+        "fortschittederphys": "fortschphys",
         # Annalen der Physik (Berlin) ←→ Ann. Phys. (used interchangeably in citations)
         "annalenphys": "annphys",
         # Comptes Rendus Physique full name → abbreviation
