@@ -2,11 +2,14 @@
 
 ## Active Tasks
 - [ ] Various per-paper layout failures — Unnumbered sections, no heading found, chapter-end refs. Each affects 1-5 papers.
-- [ ] Image-based PDFs — ~10 old papers. pdfium extracts 0-32 blocks (chart labels only). Unsolvable without OCR.
+- [ ] Image-based PDFs — ~10 old papers. pdfium extracts 0-32 blocks (chart labels only). OCR fallback now available (`--ocr-fallback`) but these old scanned PDFs may need different handling than Type3 font PDFs.
 - [ ] INSPIRE metadata gaps — 2103.01183 (951 missed: DOI-only), 2006.11237 (118: DOI-only), 1905.08669 (112: DOI-only), 1003.3928 (121 refs: empty metadata). Comparison methodology issue, not extraction bug.
 - [ ] Context-aware journal validation — Words like `Physics`, `Energy`, `Science` in titles matching as journal names from KB. Need volume/year proximity check to filter false positives.
 
-## Progress This Session (90.5%)
+## Progress This Session
+- **OCR fallback for Type3 font PDFs**: Added `--ocr-fallback` CLI flag. When a page has < 10 non-whitespace characters, renders page at 300 DPI via pdfium, OCRs with tesseract (leptess crate), converts word bounding boxes back to PdfChar entries. Key insight: Type3 font pages produce ~60 space characters (not zero), so the threshold checks non-whitespace chars specifically. Result: 0704.3011 (575 expected refs) now extracts 517 refs (was 0). New deps: `leptess`, `image`, pdfium-render `image` feature.
+
+## Previous Session (90.5%)
 - **Marker scan strategy optimization**: Compare dense vs trailing scan results by marker count instead of short-circuiting on first success. The fallback pipeline previously stopped at first non-empty result; now it evaluates both strategies and picks the one with more markers. Fixes cases like hep-ex_0602035 (5→62 refs). +57 matches.
 - **Fallback threshold raised**: Increased TOC false-positive heading threshold from 5 to 10. Reduces spurious references from table-of-contents sections with dense but low-value entries.
 - **Bare arXiv format parsing**: Added support for "arXiv:0510213 [hep-ph]" format (colon prefix, category in brackets). Converts to "hep-ph/0510213". Extends arXiv ID extraction.
@@ -65,22 +68,22 @@
 - `a4c5f4f` — Add two-column layout support, evaluation pipeline, download scripts
 - `65b1a65` — Initial implementation of layout-aware HEP reference extractor
 
-## Evaluation Results (1000 papers, full run)
+## Evaluation Results (1000 papers, full run, without --ocr-fallback)
 ```
 Papers evaluated:     1,000 (0 errors)
 INSPIRE refs total:   136,982
-Extracted refs total: 162,592
+Extracted refs total: 166,137
 Matched by arXiv ID:  69,613 (51%)
-Matched by journal:   52,029 (38%)
+Matched by journal:   52,094 (38%)
 Matched by DOI:        2,421 (2%)
-Total matched:        123,992 / 136,982 (90.5%)
+Total matched:        124,128 / 136,982 (90.6%)
 ```
 
 ## Top 15 Missed Papers (at 90.1% recall)
 ```
 Rank  Paper            INSPIRE  Matched  Missed  Recall%  Category
 1     2103.01183          1036       85     951     8%  INSPIRE DOI-only metadata
-2     0704.3011            575        0     575     0%  pdfium extracts only spaces
+2     0704.3011            575      517*    58*    89%* *with --ocr-fallback
 3     hep-ph_9506380       421        0     421     0%  Image-based PDF
 4     1206.2913            950      654     296    68%  No identifiers (292/296)
 5     1909.12524          1636     1342     294    82%  DOI-only in INSPIRE
@@ -91,7 +94,7 @@ Rank  Paper            INSPIRE  Matched  Missed  Recall%  Category
 10    1112.2853            483      309     174    63%  No identifiers (165/174)
 11    hep-ph_9306320       164        0     164     0%  Image-based PDF
 12    1406.6311           1783     1630     153    91%  Extraction gap (improved)
-13    0802.0007            122        0     122     0%  pdfium extracts only spaces
+13    0802.0007            122        0*   122*     0%* *likely fixable with --ocr-fallback
 14    1003.3928            121        0     121     0%  INSPIRE metadata empty
 15    1902.00134          1051      932     119    88%  Matching gap (118 no_id)
 ```
@@ -100,13 +103,13 @@ Rank  Paper            INSPIRE  Matched  Missed  Recall%  Category
 - **No identifiers in INSPIRE** (5,935 / 45%): Refs with no arXiv, DOI, or journal+volume. Fundamentally unmatchable.
 - **Journal without raw text** (3,347 / 25%): INSPIRE has journal+vol metadata but no raw_ref text — published-version-only entries not in arXiv PDF.
 - **DOI-only in INSPIRE** (1,995 / 15%): INSPIRE has only DOI, no journal or arXiv. Mostly editorial additions.
-- **Zero-extraction papers** (1,091 / 8%): Image-based or Type3 font PDFs where pdfium extracts no usable text.
+- **Zero-extraction papers** (1,091 / 8%): Image-based or Type3 font PDFs where pdfium extracts no usable text. Type3 font papers now addressable with `--ocr-fallback`.
 - **Journal with raw text** (424 / 3%): **Only actionable category.** INSPIRE has journal+vol and raw text. Spread thinly: Phys.Rev.D (20), Phys.Lett.B (20), Nucl.Phys.B (16), PoS (15), Eur.Phys.J.C (14). Edge cases in formatting.
 - **ArXiv-only in INSPIRE** (395 / 3%): INSPIRE has arXiv ID but no raw text — record-linking metadata, not in PDF.
 - **Theoretical ceiling** (~94.7%): Only 424 refs are genuinely fixable through extraction improvements.
 
 ## 0-Recall Paper Categories (14 papers with >10 INSPIRE refs)
-1. **pdfium text extraction failure** (3 papers): 0704.3011 (575 refs), 0802.0007 (122), 0711.3596 (55). pdfium extracts only spaces from reference pages (Type3 fonts or outlined text). Characters are NOT interleaved — they arrive per-column. The layout pipeline handles two-column correctly via `split_columns`. Unsolvable without alternative text extraction (e.g., poppler/pdftotext).
+1. **pdfium text extraction failure** (3 papers): 0704.3011 (575 refs), 0802.0007 (122), 0711.3596 (55). pdfium extracts only spaces from reference pages (Type3 fonts or outlined text). **Now solvable with `--ocr-fallback`**: 0704.3011 extracts 517/575 refs via OCR.
 2. **Image-based/Type3 font PDFs** (~7 papers): hep-ph_9506380, hep-ph_9306320, hep-th_9411108, hep-ph_9903282, hep-ph_9507378, hep-lat_9605038, hep-lat_9609035, hep-lat_9309005, hep-lat_9310022, hep-lat_9308011. pdfium extracts <10 blocks from 30-50 page papers. Unsolvable without OCR.
 3. **INSPIRE metadata empty** (2 papers): 1003.3928 (121 refs), 1310.7534 (35 refs). Extraction works, nothing to match against.
 4. **Other** (2 papers): hep-ex_0012035 (12 refs), 1102.1523 (4 refs).
@@ -142,6 +145,8 @@ Rank  Paper            INSPIRE  Matched  Missed  Recall%  Category
 - **Running header tolerance**: `gather_subsequent_pages` no longer stops at standalone "References" headings. Instead sets `saw_heading` flag and only stops if the page also has ref content (marker-based or citation density). Prevents false stop on running headers at top of appendix pages.
 - **Extended heading verification**: `has_refs_after` checks up to 3 subsequent pages (not just 1) with per-page 15-block limit. Handles appendix pages between heading and ref continuation.
 - **No character-level column reorder**: pdfium delivers chars per-column (left then right, 1-2 switches per page), NOT interleaved. Character reordering was tested and caused -12 net regressions by disrupting reference section block boundaries. The existing `split_columns` at line level is sufficient.
+- **OCR fallback threshold**: Type3 font pages produce ~60 space characters (not zero), so threshold checks non-whitespace chars < 10 (not total chars < 10). A normal page has hundreds of non-whitespace chars.
+- **OCR word-level boxes**: Tesseract word-level bounding boxes converted to PdfChar by evenly distributing characters across word width. Character-level boxes from tesseract are too noisy. Confidence threshold: 40%.
 - **Backward-jump word break**: Break word when `(ch.x + ch.width) < acc.x` — the new char's right edge is left of the word start. Protects against occasional backward x-jumps without false positives on subscripts.
 - **Marker scan comparison**: Dense vs trailing scan fallback now compares final marker counts instead of stopping at first non-empty result. Evaluates both strategies before picking best.
 - **Fallback threshold increased to 10**: Prevents table-of-contents sections with dense but low-quality ref-like entries from being misclassified.
@@ -203,10 +208,10 @@ Per-paper timing (1303.4571, 104 pages):
 - `65b1a65` — Initial implementation of layout-aware HEP reference extractor
 
 ## Next Steps (by estimated impact)
-1. **Investigate medium-recall papers (60-80%)** — Diminishing returns but potentially fixable. Gap analysis shows only 424 of 13,187 unmatched refs are genuinely fixable (journal+volume in INSPIRE with raw text). Most low-recall papers are INSPIRE metadata limited.
-2. **Context-aware journal validation** — Words like `Physics`, `Energy`, `Science` in titles match as journal names from KB. Need volume/year proximity check to filter false positives.
-3. **Prefix trie** for report number matching (skip most patterns without regex)
-4. **Note**: OCR task deferred. Estimated 750 refs from Type3/outlined PDFs but adds tesseract runtime dependency.
+1. **Evaluate OCR on remaining Type3/image papers** — Test `--ocr-fallback` on 0802.0007, 0711.3596, and the ~10 image-based PDFs. Integrate into evaluate.sh with optional flag.
+2. **Investigate medium-recall papers (60-80%)** — Diminishing returns but potentially fixable. Gap analysis shows only 424 of 13,187 unmatched refs are genuinely fixable (journal+volume in INSPIRE with raw text). Most low-recall papers are INSPIRE metadata limited.
+3. **Context-aware journal validation** — Words like `Physics`, `Energy`, `Science` in titles match as journal names from KB. Need volume/year proximity check to filter false positives.
+4. **Prefix trie** for report number matching (skip most patterns without regex)
 
 ## Technical Context
 
@@ -222,6 +227,7 @@ Per-paper timing (1303.4571, 104 pages):
 - `src/zones.rs` — `is_heading_text` (running header rejection, prefix/suffix number handling, colon stripping)
 - `src/parse.rs` — Token-based parser, multi-journal sub-ref extraction with position-based arXiv/DOI assignment, arXiv-only sub-refs, ibid/erratum sub-refs, old-style volume splitting ("249B"), conference volume parsing
 - `src/doi.rs` — DOI lookup via CrossRef bibliographic API, SQLite cache
+- `src/ocr.rs` — Tesseract OCR fallback: render page at 300 DPI via pdfium, encode as TIFF, OCR with leptess, convert word bounding boxes to PdfChar entries
 - `src/main.rs` — CLI, pipeline orchestration, `split_semicolon_subrefs`
 - `scripts/compare_refs.py` — Comparison (flexible journal/volume matching, abbreviation normalization, DOI matching)
 - `scripts/evaluate.sh` — Evaluation orchestrator (caches results in `tests/fixtures/results/`, invalidates on binary change)

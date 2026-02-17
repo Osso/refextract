@@ -9,6 +9,7 @@ use crate::types::{PageChars, PdfChar};
 pub fn extract_chars(
     pdfium: &Pdfium,
     path: &Path,
+    ocr_fallback: bool,
 ) -> Result<Vec<PageChars>> {
     let document = pdfium
         .load_pdf_from_file(path, None)
@@ -18,23 +19,38 @@ pub fn extract_chars(
         .pages()
         .iter()
         .enumerate()
-        .map(|(idx, page)| extract_page_chars(idx, &page))
+        .map(|(idx, page)| extract_page_chars(idx, &page, ocr_fallback))
         .collect()
 }
 
 fn extract_page_chars(
     page_idx: usize,
     page: &PdfPage,
+    ocr_fallback: bool,
 ) -> Result<PageChars> {
     let text_page = page
         .text()
         .with_context(|| format!("Failed to load text for page {}", page_idx + 1))?;
 
-    let chars: Vec<PdfChar> = text_page
+    let mut chars: Vec<PdfChar> = text_page
         .chars()
         .iter()
         .filter_map(|ch| convert_text_char(&ch))
         .collect();
+
+    let meaningful_chars = chars.iter().filter(|c| !c.ch.is_whitespace()).count();
+    if meaningful_chars < 10 && ocr_fallback {
+        match crate::ocr::ocr_page(page, page_idx) {
+            Ok(ocr_chars) if ocr_chars.len() > chars.len() => {
+                eprintln!("OCR fallback: page {} ({} chars)", page_idx + 1, ocr_chars.len());
+                chars = ocr_chars;
+            }
+            Ok(_) => {}
+            Err(e) => {
+                eprintln!("OCR failed on page {}: {e:#}", page_idx + 1);
+            }
+        }
+    }
 
     Ok(PageChars {
         page_num: page_idx + 1,

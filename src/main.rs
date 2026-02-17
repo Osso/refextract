@@ -3,6 +3,7 @@ mod doi;
 mod kb;
 mod layout;
 mod markers;
+mod ocr;
 mod parse;
 mod pdf;
 mod tokenizer;
@@ -40,6 +41,10 @@ struct Cli {
     #[arg(long)]
     no_doi_lookup: bool,
 
+    /// Use OCR for pages where text extraction fails (requires tesseract)
+    #[arg(long)]
+    ocr_fallback: bool,
+
     /// Override pdfium library path
     #[arg(long, env = "PDFIUM_LIB_PATH")]
     pdfium_path: Option<String>,
@@ -58,6 +63,12 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
     if cli.files.is_empty() {
         anyhow::bail!("No input files specified");
+    }
+    if cli.ocr_fallback && !ocr::tesseract_available() {
+        anyhow::bail!(
+            "--ocr-fallback requires tesseract with eng traineddata. \
+             Install tesseract-ocr and tesseract-ocr-eng."
+        );
     }
     let pdfium = bind_pdfium(&cli.pdfium_path)?;
     let batch = cli.files.len() > 1;
@@ -80,7 +91,7 @@ fn main() -> Result<()> {
 
 fn run_single(pdfium: &Pdfium, cli: &Cli, doi_cache: &Option<doi::DoiCache>) -> Result<()> {
     if cli.debug_layout {
-        let page_chars = pdf::extract_chars(pdfium, &cli.files[0])?;
+        let page_chars = pdf::extract_chars(pdfium, &cli.files[0], cli.ocr_fallback)?;
         let all_blocks = build_page_blocks(&page_chars);
         let body_font_size = zones::compute_body_font_size(&all_blocks);
         let zoned_pages = classify_all_pages(&page_chars, &all_blocks, body_font_size);
@@ -88,7 +99,7 @@ fn run_single(pdfium: &Pdfium, cli: &Cli, doi_cache: &Option<doi::DoiCache>) -> 
         return Ok(());
     }
 
-    let parsed = process_pdf(pdfium, &cli.files[0], doi_cache)?;
+    let parsed = process_pdf(pdfium, &cli.files[0], doi_cache, cli.ocr_fallback)?;
     print_output(&parsed, cli.pretty)
 }
 
@@ -97,7 +108,7 @@ fn run_batch(pdfium: &Pdfium, cli: &Cli, doi_cache: &Option<doi::DoiCache>) -> R
     for (i, file) in cli.files.iter().enumerate() {
         eprint!("\r[{}/{}] {}", i + 1, total, file.display());
 
-        let result = match process_pdf(pdfium, file, doi_cache) {
+        let result = match process_pdf(pdfium, file, doi_cache, cli.ocr_fallback) {
             Ok(refs) => BatchResult {
                 file: file.display().to_string(),
                 references: Some(refs),
@@ -119,8 +130,9 @@ fn process_pdf(
     pdfium: &Pdfium,
     file: &Path,
     doi_cache: &Option<doi::DoiCache>,
+    ocr_fallback: bool,
 ) -> Result<Vec<ParsedReference>> {
-    let page_chars = pdf::extract_chars(pdfium, file)?;
+    let page_chars = pdf::extract_chars(pdfium, file, ocr_fallback)?;
     let all_blocks = build_page_blocks(&page_chars);
     let body_font_size = zones::compute_body_font_size(&all_blocks);
     let zoned_pages = classify_all_pages(&page_chars, &all_blocks, body_font_size);
