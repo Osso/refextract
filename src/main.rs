@@ -127,6 +127,7 @@ fn process_pdf(
     let raw_refs = collect::collect_references(&zoned_pages);
     let raw_refs = split_semicolon_subrefs(raw_refs);
     let mut parsed = parse_all_references(&raw_refs);
+    resolve_ibid_journals(&mut parsed);
     if let Some(cache) = doi_cache {
         doi::enrich_dois(&mut parsed, cache);
     }
@@ -256,6 +257,31 @@ fn looks_like_citation(text: &str) -> bool {
         || text.contains("DOI")
         || text.contains("Preprint")
         || text.contains("preprint")
+}
+
+/// Resolve ibid placeholders from semicolon-split references.
+/// When parse.rs finds a standalone "ibid. V, P (Y)" ref, it sets
+/// journal_title to "ibid". Here we replace that with the actual journal
+/// from the nearest prior ref with the same linemarker.
+fn resolve_ibid_journals(refs: &mut [ParsedReference]) {
+    for i in 1..refs.len() {
+        if refs[i].journal_title.as_deref() != Some("ibid") {
+            continue;
+        }
+        let linemarker = &refs[i].linemarker;
+        for j in (0..i).rev() {
+            if refs[j].linemarker != *linemarker {
+                continue;
+            }
+            match refs[j].journal_title.as_deref() {
+                Some("ibid") | None => continue,
+                Some(_) => {
+                    refs[i].journal_title = refs[j].journal_title.clone();
+                    break;
+                }
+            }
+        }
+    }
 }
 
 fn print_output(parsed: &[ParsedReference], pretty: bool) -> Result<()> {

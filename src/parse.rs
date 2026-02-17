@@ -30,6 +30,11 @@ pub fn parse_references(raw: &RawReference, tokens: &[Token]) -> Vec<ParsedRefer
     if result.journal_title.is_some() && result.journal_volume.is_none() {
         result.journal_title = None;
     }
+    // Standalone ibid ref (from semicolon splitting): extract numeration
+    // after the Ibid token. Journal will be resolved later by caller.
+    if result.journal_title.is_none() {
+        extract_standalone_ibid(tokens, &mut result);
+    }
     extract_authors(tokens, &mut result);
 
     let mut refs = vec![result.clone()];
@@ -87,6 +92,19 @@ fn extract_journal_info(tokens: &[Token], result: &mut ParsedReference) {
 
     if result.journal_year.is_none() {
         extract_standalone_year(tokens, result);
+    }
+}
+
+/// Handle standalone ibid refs (e.g., "ibid. 94 (1954) 7") from semicolon
+/// splitting. Extract numeration after the Ibid token and mark journal as
+/// "ibid" placeholder for later resolution.
+fn extract_standalone_ibid(tokens: &[Token], result: &mut ParsedReference) {
+    let ibid_pos = tokens.iter().position(|t| t.kind == TokenKind::Ibid);
+    let Some(ipos) = ibid_pos else { return };
+    let window = &tokens[ipos + 1..];
+    assign_numeration(window, result);
+    if result.journal_volume.is_some() {
+        result.journal_title = Some("ibid".to_string());
     }
 }
 
@@ -388,6 +406,10 @@ fn extract_ibid_sub_refs(
     let Some(ref journal) = primary.journal_title else {
         return Vec::new();
     };
+    // Skip placeholder — standalone ibid refs are handled by extract_standalone_ibid
+    if journal == "ibid" {
+        return Vec::new();
+    }
 
     let mut sub_refs = Vec::new();
     for (i, token) in tokens.iter().enumerate() {
