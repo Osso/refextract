@@ -27,10 +27,10 @@ fn collect_reference_section(
             all_blocks.extend(gather_ref_blocks(zoned_pages, loc));
         }
         let heading_refs = split_into_references(&all_blocks, ReferenceSource::ReferenceSection);
-        // If heading-based collection yielded very few refs, the heading may be
-        // a false positive (e.g., TOC entry). Try the fallback marker scan and
-        // use whichever found more references.
-        if heading_refs.len() < 5 {
+        // If heading-based collection yielded few refs, the heading may be
+        // a false positive (e.g., TOC entry "References" on page 4 of a 97-page
+        // paper). Try the fallback marker scan and use whichever found more.
+        if heading_refs.len() < 10 {
             let fallback = collect_refs_by_markers(zoned_pages);
             if fallback.len() > heading_refs.len() {
                 return fallback;

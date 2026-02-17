@@ -82,10 +82,31 @@ fn collect_marker_block_lines(
     zoned_pages: &[Vec<ZonedBlock>],
 ) -> Vec<(String, usize)> {
     let dense = collect_dense_marker_blocks(zoned_pages);
+    let dense_markers: usize = dense
+        .iter()
+        .map(|(text, _)| count_markers_in_text(text))
+        .sum();
+
+    // If the dense strategy found a substantial number of markers, use it
+    // directly. Otherwise, also try the trailing scan and compare — a small
+    // dense result often means a single multi-line block was found while
+    // the real reference section spans many single-line blocks.
+    if dense_markers >= 10 {
+        return dense;
+    }
+
+    let trailing = collect_trailing_marker_blocks(zoned_pages);
+    let trailing_markers: usize = trailing
+        .iter()
+        .map(|(text, _)| count_markers_in_text(text))
+        .sum();
+
+    if trailing_markers > dense_markers {
+        return trailing;
+    }
     if !dense.is_empty() {
         return dense;
     }
-    let trailing = collect_trailing_marker_blocks(zoned_pages);
     if !trailing.is_empty() {
         return trailing;
     }
