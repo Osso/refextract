@@ -243,6 +243,10 @@ fn add_journal_name_spans(spans: &mut Vec<Span>, text: &str) {
         }
         if let Some((len, abbrev)) = kb::match_journal_name(text, pos) {
             let (len, abbrev) = extend_section_letter(text, pos, len, abbrev);
+            if embedded_in_compound_name(text, pos, len) {
+                pos += 1;
+                continue;
+            }
             spans.push(Span {
                 start: pos,
                 end: pos + len,
@@ -255,6 +259,34 @@ fn add_journal_name_spans(spans: &mut Vec<Span>, text: &str) {
             pos += 1;
         }
     }
+}
+
+/// Suppress common-English-word journal matches (e.g., "Science", "Nature")
+/// when followed by a capitalized word, indicating the match is part of a
+/// longer compound name not in the KB (e.g., "Nuclear Science Symposium",
+/// "LSST Science Collaboration"). Only applies to title-case single words
+/// (4+ chars, no dots) — abbreviations like "AIP", "Proc." are exempt.
+fn embedded_in_compound_name(text: &str, pos: usize, len: usize) -> bool {
+    let matched = text[pos..pos + len].trim();
+    if matched.len() < 4 || matched.contains('.') {
+        return false;
+    }
+    // Must be a single title-case word (first uppercase, rest lowercase)
+    let mut mchars = matched.chars();
+    let first_m = mchars.next().unwrap();
+    if !first_m.is_ascii_uppercase() || !mchars.all(|c| c.is_ascii_lowercase()) {
+        return false;
+    }
+    // Check if followed by a capitalized word (compound name continues)
+    let after = &text[pos + len..];
+    let trimmed = after.trim_start();
+    if trimmed.len() < 2 {
+        return false;
+    }
+    let mut chars = trimmed.chars();
+    let first = chars.next().unwrap();
+    let second = chars.next().unwrap();
+    first.is_ascii_uppercase() && second.is_ascii_lowercase()
 }
 
 /// Extend a journal match to include a section letter if present.
