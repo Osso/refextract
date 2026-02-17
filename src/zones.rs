@@ -76,9 +76,55 @@ pub fn is_reference_heading_line(line_text: &str) -> bool {
     is_heading_text(&trimmed)
 }
 
+/// Strip trailing parenthesized number ranges: "(36)-(84)", "(1)-(35)"
+fn strip_trailing_paren_range(text: &str) -> &str {
+    // Match pattern: optional whitespace + (N)-(N) or (N) at the end
+    let trimmed = text.trim_end();
+    let bytes = trimmed.as_bytes();
+    if bytes.last() != Some(&b')') {
+        return trimmed;
+    }
+    // Walk backward to find the start of the paren range
+    let mut i = trimmed.len();
+    // Accept: (digits)-(digits) or (digits)
+    // Work backward through: )digits(-)digits(
+    let mut depth = 0;
+    let mut found_paren_group = false;
+    while i > 0 {
+        i -= 1;
+        match bytes[i] {
+            b')' => depth += 1,
+            b'(' => {
+                depth -= 1;
+                if depth == 0 {
+                    found_paren_group = true;
+                    // Check for preceding dash and another group: -(N)
+                    if i > 0 && bytes[i - 1] == b'-' && i >= 2 && bytes[i - 2] == b')' {
+                        // Continue to consume the preceding (N)- group
+                        i -= 1; // skip '-'
+                        continue;
+                    }
+                    break;
+                }
+            }
+            b'0'..=b'9' | b'-' if depth > 0 => continue,
+            _ if depth == 0 && found_paren_group => break,
+            _ if depth > 0 => return trimmed, // non-digit inside parens
+            _ => return trimmed,
+        }
+    }
+    if found_paren_group {
+        trimmed[..i].trim_end()
+    } else {
+        trimmed
+    }
+}
+
 fn is_heading_text(text: &str) -> bool {
-    // Strip trailing punctuation (colon, period)
+    // Strip trailing punctuation (colon, period) and parenthesized ranges
+    // like "(36)-(84)" in "References (36)-(84)"
     let text = text.trim_end_matches([':', '.']);
+    let text = strip_trailing_paren_range(text);
     // Exact matches
     if matches!(
         text,
