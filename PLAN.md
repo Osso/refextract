@@ -14,7 +14,8 @@
 - **Refactored `group_chars_into_words`** to accept `&[PdfChar]` instead of `&PageChars` for flexibility.
 - **Cross-reference ibid resolution**: Parse standalone "ibid. V, P (Y)" refs (from semicolon splitting) with placeholder journal, then resolve by inheriting journal from nearest prior ref with same linemarker. +98 matches, 0 regressions, 43 papers improved.
 - **Context-aware journal validation**: Suppress single title-case common English words ("Science", "Nature", "Sciences") when followed by a capitalized word, indicating compound name not in KB. Added Science Advances KB entry. -188 false positive extractions, 0 net regressions.
-- **Net gain**: 123,795 → 123,898 (+103 matches, 90.4% → 90.5%)
+- **Parenthesized range heading detection**: Recognize headings like "References (36)-(84)" by stripping trailing (N)-(N) patterns. Fixes supplementary reference sections separated from main refs by appendix pages. +37 matches from 1708.01294.
+- **Net gain**: 123,795 → 123,935 (+140 matches, 90.4% → 90.5%)
 
 ## Previous Session (90.1% → 90.4%)
 - **Ibid/erratum sub-reference extraction**: Recognize `[Erratum-ibid, V, P (Y)]` and `ibid., V, P (Y)` patterns as sub-references inheriting the primary's journal title. Extended tokenizer to match `Erratum-ibid`, `Addendum-ibid`, `Erratum:ibid` as Ibid tokens. +43 matches.
@@ -69,13 +70,13 @@
 ```
 Papers evaluated:     1,000 (0 errors)
 INSPIRE refs total:   136,982
-Extracted refs total: 162,705
-Matched by arXiv ID:  69,541 (51%)
-Matched by journal:   51,936 (38%)
+Extracted refs total: 162,566
+Matched by arXiv ID:  69,542 (51%)
+Matched by journal:   51,972 (38%)
 Matched by DOI:        2,421 (2%)
-Total matched:        123,898 / 136,982 (90.5%)
+Total matched:        123,935 / 136,982 (90.5%)
 ```
-Previous: 123,800. +98 from ibid resolution (+5 from backward-jump word break).
+Previous: 123,898. +37 from paren-range heading detection.
 
 ## Top 15 Missed Papers (at 90.1% recall)
 ```
@@ -154,6 +155,7 @@ Per-paper timing (1303.4571, 104 pages):
 - Each eval invocation re-initializes KB (Lazy static per process). Batch mode would amortize.
 
 ## Commits
+- `81d6d76` — Detect reference headings with parenthesized number ranges (+37)
 - `e2b47c3` — Suppress false-positive journal matches for common English words, add Sci. Adv. KB entry
 - `b92c177` — Resolve ibid journal references from semicolon-split sub-refs (+98)
 - `c56fdf8` — Update README with two-column layout detection
