@@ -3,6 +3,183 @@ use std::collections::HashMap;
 use once_cell::sync::Lazy;
 use regex::Regex;
 
+// ── Trie for report-number prefix dispatch ─────────────────────────────────
+
+struct TrieNode {
+    /// Children indexed by lowercase ASCII byte.
+    children: HashMap<u8, Box<TrieNode>>,
+    /// Patterns whose prefix ends at this node.
+    leaves: Vec<TrieLeaf>,
+}
+
+struct TrieLeaf {
+    standardized: String,
+    /// Matches the numeration part that follows the prefix: `[\s\-/]*(?:alt1|alt2|…)`.
+    numeration_re: Regex,
+}
+
+pub struct ReportNumberTrie {
+    root: TrieNode,
+}
+
+pub struct ReportNumberMatch {
+    pub matched: String,
+    pub standardized: String,
+}
+
+impl TrieNode {
+    fn new() -> Self {
+        TrieNode { children: HashMap::new(), leaves: Vec::new() }
+    }
+}
+
+impl ReportNumberTrie {
+    /// Find the first report number match anywhere in `text`.
+    pub fn find_match(&self, text: &str) -> Option<ReportNumberMatch> {
+        let bytes = text.as_bytes();
+        for start in 0..bytes.len() {
+            // Require word boundary: start of string or previous char is not alphanumeric.
+            if start > 0 && bytes[start - 1].is_ascii_alphanumeric() {
+                continue;
+            }
+            if let Some(m) = self.try_match_at(text, start) {
+                return Some(m);
+            }
+        }
+        None
+    }
+
+    fn try_match_at(&self, text: &str, start: usize) -> Option<ReportNumberMatch> {
+        let bytes = text.as_bytes();
+        let mut node = &self.root;
+        let mut pos = start;
+        let mut best: Option<ReportNumberMatch> = None;
+
+        // Walk trie edges, matching text case-insensitively.
+        // A space edge in the trie consumes 1+ separator chars (space/tab/dash/slash).
+        loop {
+            // At every node with leaves, try numeration regex on remaining text.
+            if !node.leaves.is_empty() {
+                if let Some(m) = try_leaves(&node.leaves, text, pos, start) {
+                    best = Some(m);
+                }
+            }
+            if pos >= bytes.len() {
+                break;
+            }
+            let ch = bytes[pos].to_ascii_lowercase();
+            // Separators always route through the space edge, consuming all consecutive ones.
+            if ch == b' ' || ch == b'\t' || ch == b'-' || ch == b'/' {
+                if let Some(child) = node.children.get(&b' ') {
+                    while pos < bytes.len()
+                        && matches!(bytes[pos], b' ' | b'\t' | b'-' | b'/')
+                    {
+                        pos += 1;
+                    }
+                    node = child;
+                } else {
+                    break;
+                }
+            } else if let Some(child) = node.children.get(&ch) {
+                node = child;
+                pos += 1;
+            } else {
+                break;
+            }
+        }
+        best
+    }
+}
+
+/// Try all leaves at the current trie node against remaining text.
+fn try_leaves(
+    leaves: &[TrieLeaf],
+    text: &str,
+    pos: usize,
+    start: usize,
+) -> Option<ReportNumberMatch> {
+    let suffix = &text[pos..];
+    for leaf in leaves {
+        if let Some(m) = leaf.numeration_re.find(suffix) {
+            // Only accept match anchored at position 0 in suffix.
+            if m.start() == 0 {
+                let matched = text[start..pos + m.end()].to_string();
+                return Some(ReportNumberMatch {
+                    matched,
+                    standardized: leaf.standardized.clone(),
+                });
+            }
+        }
+    }
+    None
+}
+
+/// Build the report-number trie from KB text.
+pub fn build_report_trie(kb_text: &str) -> ReportNumberTrie {
+    let mut root = TrieNode::new();
+    let mut current_numerations: Vec<String> = Vec::new();
+
+    for line in kb_text.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') || line.starts_with("*****") {
+            continue;
+        }
+        if line.starts_with('<') && line.ends_with('>') {
+            let inner = &line[1..line.len() - 1];
+            if let Some(regex_str) = numeration_to_regex(inner) {
+                current_numerations.push(regex_str);
+            }
+            continue;
+        }
+        if let Some((prefix, standardized)) = line.split_once("---") {
+            insert_into_trie(
+                &mut root,
+                prefix.trim(),
+                standardized.trim(),
+                &current_numerations,
+            );
+        }
+    }
+    ReportNumberTrie { root }
+}
+
+fn insert_into_trie(
+    root: &mut TrieNode,
+    prefix: &str,
+    standardized: &str,
+    numerations: &[String],
+) {
+    if numerations.is_empty() {
+        return;
+    }
+    // Normalize: collapse tabs/double-spaces to single space, then lowercase.
+    let normalized = prefix
+        .replace('\t', " ")
+        .replace("  ", " ")
+        .to_ascii_lowercase();
+
+    // Walk/create trie nodes for each character of the normalized prefix.
+    // Spaces in the prefix represent flexible separators (space/tab/dash/slash).
+    let mut node = root;
+    for byte in normalized.bytes() {
+        node = node.children.entry(byte).or_insert_with(|| Box::new(TrieNode::new()));
+    }
+
+    // Build numeration regex anchored to start of remaining text.
+    let num_alt = numerations.join("|");
+    let pattern = format!(r"(?i)^[\s\-/]*(?:{num_alt})");
+    if let Ok(re) = Regex::new(&pattern) {
+        node.leaves.push(TrieLeaf {
+            standardized: standardized.to_string(),
+            numeration_re: re,
+        });
+    }
+}
+
+/// Compiled report-number trie (replaces sequential REPORT_NUMBERS scan).
+pub static REPORT_NUMBER_TRIE: Lazy<ReportNumberTrie> =
+    Lazy::new(|| build_report_trie(REPORT_NUMBERS_KB));
+
 // Force recompilation when KB files change (hash set by build.rs).
 #[allow(dead_code)]
 const _KB_HASH: &str = env!("KB_HASH");
@@ -88,17 +265,19 @@ pub static COLLABORATIONS: Lazy<HashMap<String, String>> = Lazy::new(|| {
 });
 
 /// A report number pattern: institute prefix + compiled regex for numeration.
+#[allow(dead_code)]
 pub struct ReportNumberPattern {
-    #[allow(dead_code)]
     pub prefix: String,
     pub standardized: String,
     pub numeration_re: Regex,
 }
 
-/// Compiled report number patterns.
+/// Compiled report number patterns (kept for reference; replaced by REPORT_NUMBER_TRIE).
+#[allow(dead_code)]
 pub static REPORT_NUMBERS: Lazy<Vec<ReportNumberPattern>> =
     Lazy::new(|| parse_report_numbers(REPORT_NUMBERS_KB));
 
+#[allow(dead_code)]
 fn parse_report_numbers(kb_text: &str) -> Vec<ReportNumberPattern> {
     let mut patterns = Vec::new();
     let mut current_numerations: Vec<String> = Vec::new();
@@ -127,6 +306,7 @@ fn parse_report_numbers(kb_text: &str) -> Vec<ReportNumberPattern> {
     patterns
 }
 
+#[allow(dead_code)]
 fn add_prefix_patterns(
     patterns: &mut Vec<ReportNumberPattern>,
     prefix: &str,
@@ -414,10 +594,65 @@ pub fn match_collaboration(text: &str) -> Option<String> {
 /// Try to match a report number in the text.
 /// Returns (matched_text, standardized_prefix).
 pub fn match_report_number(text: &str) -> Option<(String, String)> {
-    REPORT_NUMBERS.iter().find_map(|pattern| {
-        pattern
-            .numeration_re
-            .find(text)
-            .map(|m| (m.as_str().to_string(), pattern.standardized.clone()))
-    })
+    REPORT_NUMBER_TRIE
+        .find_match(text)
+        .map(|m| (m.matched, m.standardized))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn trie() -> ReportNumberTrie {
+        build_report_trie(REPORT_NUMBERS_KB)
+    }
+
+    #[test]
+    fn fermilab_pub_hyphen_separator() {
+        let t = trie();
+        let m = t.find_match("see FERMILAB-PUB-93-123 for details");
+        let m = m.expect("should match FERMILAB-PUB");
+        assert_eq!(m.standardized, "FERMILAB-Pub");
+        assert!(m.matched.to_uppercase().starts_with("FERMILAB"));
+    }
+
+    #[test]
+    fn fermilab_pub_space_separator() {
+        let t = trie();
+        let m = t.find_match("see FERMILAB PUB 93-123 for details");
+        let m = m.expect("should match FERMILAB PUB");
+        assert_eq!(m.standardized, "FERMILAB-Pub");
+    }
+
+    #[test]
+    fn slac_pub_match() {
+        let t = trie();
+        let m = t.find_match("B. Richter, SLAC-PUB-8587 (hep-ph/0008222)");
+        let m = m.expect("should match SLAC-PUB");
+        assert!(m.standardized.to_uppercase().contains("SLAC"));
+    }
+
+    #[test]
+    fn cern_match() {
+        let t = trie();
+        let m = t.find_match("CERN 96-01 Vol. 2");
+        let m = m.expect("should match CERN");
+        assert!(m.standardized.contains("CERN"));
+    }
+
+    #[test]
+    fn no_match_plain_text() {
+        let t = trie();
+        let m = t.find_match("No report number here just text");
+        assert!(m.is_none());
+    }
+
+    #[test]
+    fn double_space_separator() {
+        // "FERMILAB  PUB" (double space) should still match via separator collapse
+        let t = trie();
+        let m = t.find_match("FERMILAB  PUB 93-123");
+        let m = m.expect("should match FERMILAB  PUB with double space");
+        assert_eq!(m.standardized, "FERMILAB-Pub");
+    }
 }
