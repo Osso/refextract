@@ -108,20 +108,47 @@ fn extract_standalone_ibid(tokens: &[Token], result: &mut ParsedReference) {
     }
 }
 
+/// Try to extract volume from a Word token (letter-prefixed, old-style, conference).
+fn try_word_as_volume(token: &Token, result: &mut ParsedReference) -> bool {
+    if let Some(vol) = extract_letter_prefixed_number(&token.text) {
+        result.journal_volume = Some(vol);
+        return true;
+    }
+    if let Some((vol, letter)) = extract_old_style_volume(&token.text) {
+        result.journal_volume = Some(vol);
+        append_section_letter(result, letter);
+        return true;
+    }
+    if let Some((vol, page)) = extract_conference_volume(&token.text) {
+        result.journal_volume = Some(vol);
+        if let Some(p) = page && result.journal_page.is_none() {
+            result.journal_page = Some(p);
+        }
+        return true;
+    }
+    false
+}
+
 fn assign_numeration(window: &[Token], result: &mut ParsedReference) {
     let mut volume_found = false;
-    for token in window.iter().take(8) {
+    let tokens: Vec<&Token> = window.iter().take(8).collect();
+    for (i, token) in tokens.iter().enumerate() {
         match &token.kind {
             TokenKind::Number if !volume_found && result.journal_volume.is_none() => {
                 let clean = token.text.trim_matches(|c: char| !c.is_ascii_digit());
                 result.journal_volume = Some(clean.to_string());
                 volume_found = true;
             }
-            // Bare year (no parens) as first token: treat as volume.
-            // Standard format is "Journal Vol, Page (Year)" — the first number
-            // after a journal name is always the volume. JHEP/JCAP use year-based
-            // volumes like "2006" that look like years but are volumes.
-            // Parenthesized years like "(2006)" are clearly year indicators.
+            // Bare year followed by a number: year(issue) format (JCAP/JHEP).
+            // Treat year as journal_year, next number becomes volume.
+            TokenKind::Year if !volume_found && result.journal_volume.is_none()
+                && !token.text.starts_with('(')
+                && tokens.get(i + 1).is_some_and(|t| t.kind == TokenKind::Number) =>
+            {
+                result.journal_year =
+                    token.normalized.clone().or(Some(token.text.clone()));
+            }
+            // Bare year as first numeration: treat as volume (JHEP "2006").
             TokenKind::Year if !volume_found && result.journal_volume.is_none()
                 && !token.text.starts_with('(') =>
             {
@@ -133,7 +160,6 @@ fn assign_numeration(window: &[Token], result: &mut ParsedReference) {
                 result.journal_year =
                     token.normalized.clone().or(Some(token.text.clone()));
             }
-            // PageRange before volume: treat as combined volume (e.g., "904-905")
             TokenKind::PageRange if !volume_found && result.journal_volume.is_none() => {
                 let clean = token.text.trim_matches(|c: char| !c.is_ascii_alphanumeric() && c != '-' && c != '–');
                 result.journal_volume = Some(clean.to_string());
@@ -147,28 +173,9 @@ fn assign_numeration(window: &[Token], result: &mut ParsedReference) {
                 let clean = token.text.trim_matches(|c: char| !c.is_ascii_digit());
                 result.journal_page = Some(clean.to_string());
             }
-            // Section-letter + digits as volume: "D60", "A534", "B272"
-            // Also conference identifiers: "LAT2005", "LATTICE2019", "HEP2005"
-            // Also old-style volumes: "249B" → volume "249", section "B"
             TokenKind::Word if !volume_found && result.journal_volume.is_none() => {
-                if let Some(vol) = extract_letter_prefixed_number(&token.text) {
-                    result.journal_volume = Some(vol);
-                    volume_found = true;
-                } else if let Some((vol, letter)) =
-                    extract_old_style_volume(&token.text)
-                {
-                    result.journal_volume = Some(vol);
-                    volume_found = true;
-                    append_section_letter(result, letter);
-                } else if let Some((vol, page)) = extract_conference_volume(&token.text) {
-                    result.journal_volume = Some(vol);
-                    volume_found = true;
-                    if let Some(p) = page && result.journal_page.is_none() {
-                        result.journal_page = Some(p);
-                    }
-                }
+                volume_found = try_word_as_volume(token, result);
             }
-            // Letter-prefixed page: "B962", "L85", "R183"
             TokenKind::Word if volume_found && result.journal_page.is_none() => {
                 if let Some(page) = extract_letter_prefixed_number(&token.text) {
                     result.journal_page = Some(page);

@@ -2,12 +2,18 @@
 
 ## Active Tasks
 - [ ] Various per-paper layout failures — Unnumbered sections, no heading found, chapter-end refs. Each affects 1-5 papers.
-- [ ] Image-based PDFs — ~10 old papers. pdfium extracts 0-32 blocks (chart labels only). OCR fallback now available (`--ocr-fallback`) but these old scanned PDFs may need different handling than Type3 font PDFs.
+- [ ] Image-based PDFs — OCR fallback helps Type3 font papers (33-54% recall) and some old papers (5-48%), but 2 large reviews (hep-ph_9506380, hep-ph_9306320) get 0% — OCR text exists but zone classifier can't locate ref section. OCR match rate limited by character-level noise corrupting volumes/pages.
 - [ ] INSPIRE metadata gaps — 2103.01183 (951 missed: DOI-only), 2006.11237 (118: DOI-only), 1905.08669 (112: DOI-only), 1003.3928 (121 refs: empty metadata). Comparison methodology issue, not extraction bug.
 - [ ] Context-aware journal validation — Words like `Physics`, `Energy`, `Science` in titles matching as journal names from KB. Need volume/year proximity check to filter false positives.
 
 ## Progress This Session
+- **JCAP/JHEP/JSTAT volume fix**: Problem: `2007(12)` was tokenized as Volume(2007) with issue discarded. INSPIRE expects vol=12 (issue), yr=2007, pg=001 for JCAP-style refs. Fix: Added `YEAR_ISSUE_RE` pattern in tokenizer.rs to recognize `YYYY(MM)` and emit Year + Number tokens instead of treating it as Volume(issue). Added look-ahead in parser to assign year and volume correctly when a bare Year token is followed by a Number. Result: JCAP refs in paper 1002.4928 now extract vol=12 yr=2007 instead of vol=2007. Full evaluation: 90.57% recall (124,069/136,982), no regression from baseline 90.5%. Near-miss analysis: 1,583 same-journal different-volume cases remain, most are "ref not in PDF". jstatmech shows similar issue pattern (vol expected as month number but extracted as page), needs further investigation.
 - **OCR fallback for Type3 font PDFs**: Added `--ocr-fallback` CLI flag. When a page has < 10 non-whitespace characters, renders page at 300 DPI via pdfium, OCRs with tesseract (leptess crate), converts word bounding boxes back to PdfChar entries. Key insight: Type3 font pages produce ~60 space characters (not zero), so the threshold checks non-whitespace chars specifically. Result: 0704.3011 (575 expected refs) now extracts 517 refs (was 0). New deps: `leptess`, `image`, pdfium-render `image` feature.
+- **OCR evaluation on all 0-recall papers**: Tested `--ocr-fallback` on all 13 previously-zero papers. Results:
+  - **Type3 font papers** (good): 0704.3011 (194/575 matched, 33%), 0802.0007 (59/122, 48%), 0711.3596 (30/55, 54%). Extraction works well, match rate limited by OCR noise in volumes/pages.
+  - **Newer image-based papers** (moderate): hep-th_9411108 (24/72, 33%), hep-ph_9903282 (24/66, 36%), hep-lat_9605038 (11/31, 35%), hep-lat_9609035 (15/31, 48%), hep-lat_9309005 (8/28, 28%), hep-lat_9308011 (1/18, 5%).
+  - **Old scanned reviews** (poor): hep-ph_9506380 (0/421), hep-ph_9306320 (0/164). OCR finds text but zone classifier can't locate reference section in these large review papers.
+  - **Total**: 375/1652 new matches from OCR. Main bottleneck is OCR character-level accuracy corrupting volumes/pages, not extraction logic.
 
 ## Previous Session (90.5%)
 - **Marker scan strategy optimization**: Compare dense vs trailing scan results by marker count instead of short-circuiting on first success. The fallback pipeline previously stopped at first non-empty result; now it evaluates both strategies and picks the one with more markers. Fixes cases like hep-ex_0602035 (5→62 refs). +57 matches.
@@ -135,6 +141,7 @@ Rank  Paper            INSPIRE  Matched  Missed  Recall%  Category
 - **Running header rejection**: `is_heading_text` rejects numeric prefix/suffix with 2+ digits (page numbers) but accepts 0-1 digits (section numbers).
 - **Marker-based stop**: `gather_subsequent_pages` stops after 2 consecutive markerless pages.
 - **JCAP volume**: Keep faithful extraction ("0904"); normalize only in comparison script.
+- **JCAP/JHEP/JSTAT `YYYY(MM)` format**: `2007(12)` means year=2007, vol=12 (the issue acts as volume). Added `YEAR_ISSUE_RE` in tokenizer to emit Year + Number tokens for this pattern. Parser look-ahead assigns the Number as volume when a bare Year is followed by a Number. Previously discarded the issue as noise, emitting only vol=2007.
 - **Dots as word separators**: In `normalize_abbrev` and `find_original_byte_len`, dots are treated identically to spaces for journal name matching.
 - **Semicolon split guard**: Only split when 2+ sub-parts look like citations (have years/arXiv IDs/DOIs).
 - **No-period initials**: `AUTHOR_START_RE` accepts `[A-Z]` followed by comma/space (not just `[A-Z]\.`). Matches "Abe, T," style used by Rev. Mod. Phys. and similar journals.
@@ -208,10 +215,10 @@ Per-paper timing (1303.4571, 104 pages):
 - `65b1a65` — Initial implementation of layout-aware HEP reference extractor
 
 ## Next Steps (by estimated impact)
-1. **Evaluate OCR on remaining Type3/image papers** — Test `--ocr-fallback` on 0802.0007, 0711.3596, and the ~10 image-based PDFs. Integrate into evaluate.sh with optional flag.
-2. **Investigate medium-recall papers (60-80%)** — Diminishing returns but potentially fixable. Gap analysis shows only 424 of 13,187 unmatched refs are genuinely fixable (journal+volume in INSPIRE with raw text). Most low-recall papers are INSPIRE metadata limited.
-3. **Context-aware journal validation** — Words like `Physics`, `Energy`, `Science` in titles match as journal names from KB. Need volume/year proximity check to filter false positives.
-4. **Prefix trie** for report number matching (skip most patterns without regex)
+1. **Investigate medium-recall papers (60-80%)** — Diminishing returns but potentially fixable. Gap analysis shows only 424 of 13,187 unmatched refs are genuinely fixable (journal+volume in INSPIRE with raw text). Most low-recall papers are INSPIRE metadata limited.
+2. **Context-aware journal validation** — Words like `Physics`, `Energy`, `Science` in titles match as journal names from KB. Need volume/year proximity check to filter false positives.
+3. **Prefix trie** for report number matching (skip most patterns without regex)
+4. **OCR quality improvements** — Optional: higher DPI, image preprocessing (deskew, binarization), or tesseract PSM tuning could improve match rates on OCR'd papers. Current bottleneck is volume/page digit accuracy.
 
 ## Technical Context
 

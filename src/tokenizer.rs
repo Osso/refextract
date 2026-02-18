@@ -58,6 +58,10 @@ static VOLUME_ISSUE_COLON_PAGE_RE: Lazy<Regex> = Lazy::new(|| {
 static VOLUME_YEAR_RE: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"^(\d+)\(((?:19|20)\d{2})\)$").unwrap());
 
+/// Year with issue number: "2007(12)" or "2007(3)" — emit year + issue (JCAP/JHEP format)
+static YEAR_ISSUE_RE: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"^((?:19|20)\d{2})\((\d{1,2})\)$").unwrap());
+
 /// Volume with issue number: "82(25)" or "82(2-3)" — extract volume, discard issue
 static VOLUME_ISSUE_RE: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"^(\d+)\(\d+(?:[-–—]\d+)?\)$").unwrap());
@@ -488,6 +492,12 @@ fn try_compound_numeration(clean: &str, tokens: &mut Vec<Token>) -> bool {
     if let Some(caps) = VOLUME_ISSUE_COLON_PAGE_RE.captures(clean) {
         push_number(tokens, &caps[1]);
         push_page_or_number(tokens, &caps[2]);
+        return true;
+    }
+    // Year with issue: "2007(12)" → emit year + issue number (JCAP/JHEP format)
+    if let Some(caps) = YEAR_ISSUE_RE.captures(clean) {
+        push_year(tokens, &caps[1]);
+        push_number(tokens, &caps[2]);
         return true;
     }
     // Volume with issue number: "82(25)" → emit volume only
