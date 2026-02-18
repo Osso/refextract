@@ -59,10 +59,10 @@ impl ReportNumberTrie {
         // A space edge in the trie consumes 1+ separator chars (space/tab/dash/slash).
         loop {
             // At every node with leaves, try numeration regex on remaining text.
-            if !node.leaves.is_empty() {
-                if let Some(m) = try_leaves(&node.leaves, text, pos, start) {
-                    best = Some(m);
-                }
+            if !node.leaves.is_empty()
+                && let Some(m) = try_leaves(&node.leaves, text, pos, start)
+            {
+                best = Some(m);
             }
             if pos >= bytes.len() {
                 break;
