@@ -9,6 +9,7 @@
 - [x] Comparison normalization for jstatmech/eurphysjc/nuovcimc — Fixed journal-specific volume formats in compare_refs.py. +24 journal matches.
 
 ## Progress This Session
+- **Prefix trie for report number matching**: Replaced sequential 338-regex scan with prefix trie in kb.rs. Trie walks text character-by-character with case-insensitive matching and flexible separator handling (space/dash/slash), then evaluates only the matched prefix's numeration regex. 8x speedup on large papers (1303.4571: 19.8s → 2.4s). No regression: 124,093/136,982 (90.59%). +243 lines in kb.rs, old sequential code retained as dead_code.
 - **Comparison normalization fixes**: Added journal-specific volume matching in compare_refs.py for jstatmech (YYMM from article number), eurphysjc (year-as-volume in INSPIRE metadata), and nuovcimc (section+issue format). +24 journal matches (52,035 → 52,059). Total: 124,093/136,982 (90.59%).
 - **TOC dot-leader detection**: Added `has_dot_leaders()` check in zones.rs `is_heading_text()` to filter TOC entries with dot leaders ("References . . . . . .") from being detected as reference headings. No match impact (TOC entries weren't causing over-extraction in practice), but defensive fix for book-like PDFs.
 - **Per-paper layout failure investigation**: Found that nearly all low-recall papers are caused by INSPIRE metadata limitations (version mismatches, DOI-only, no raw text), not extraction bugs. Only fixable case: hep-ph_0412158 (505-page book with 9 chapter ref sections, 2359 extracted vs 145 INSPIRE expected — extraction is correct, it's a comparison methodology mismatch). journal_with_raw = 0 in gap analysis, confirming extraction is at ceiling.
@@ -169,13 +170,18 @@ Rank  Paper            INSPIRE  Matched  Missed  Recall%  Category
 
 ## Performance Profile
 Per-paper timing (1303.4571, 104 pages):
-- pdfium char extraction: 402ms (17%)
-- layout + zones: 21ms (1%)
-- collect + parse (incl. KB init): 1,988ms (82%)
-- **Bottleneck**: Report number KB regex compilation (~500ms after optimization, was ~1.5s)
+- Total (before trie): ~19.8s
+- Total (after trie): ~2.4s (8x speedup)
+- pdfium char extraction: ~400ms
+- layout + zones: ~20ms
+- collect + parse (incl. KB init): ~2,000ms total
+- **Previous bottleneck**: Report number regex — sequential scan over 338 patterns was 82% of per-paper time (~500ms after optimization, was ~1.5s original). Now eliminated.
+- **Current bottleneck**: pdfium char extraction + normal parse overhead. Report number matching no longer dominates.
 - Each eval invocation re-initializes KB (Lazy static per process). Batch mode would amortize.
 
 ## Commits
+- `b2f3ea4` — Replace sequential report number matching with prefix trie (8x speedup)
+- `1c2163b` — Add journal-specific comparison normalization, TOC dot-leader filter (+24)
 - `5fab80f` — Parse bare arXiv format, fix lowercase journal matching, add Quantum KB (+71)
 - `06e176c` — Compare marker scan strategies by count instead of short-circuiting (+57)
 - `81d6d76` — Detect reference headings with parenthesized number ranges (+37)
@@ -223,8 +229,7 @@ Per-paper timing (1303.4571, 104 pages):
 ## Next Steps (by estimated impact)
 1. **Investigate medium-recall papers (60-80%)** — Diminishing returns but potentially fixable. Gap analysis shows only 424 of 13,187 unmatched refs are genuinely fixable (journal+volume in INSPIRE with raw text). Most low-recall papers are INSPIRE metadata limited.
 2. **Context-aware journal validation** — Words like `Physics`, `Energy`, `Science` in titles match as journal names from KB. Need volume/year proximity check to filter false positives.
-3. **Prefix trie** for report number matching (skip most patterns without regex)
-4. **OCR quality improvements** — Optional: higher DPI, image preprocessing (deskew, binarization), or tesseract PSM tuning could improve match rates on OCR'd papers. Current bottleneck is volume/page digit accuracy.
+3. **OCR quality improvements** — Optional: higher DPI, image preprocessing (deskew, binarization), or tesseract PSM tuning could improve match rates on OCR'd papers. Current bottleneck is volume/page digit accuracy.
 
 ## Technical Context
 
