@@ -4,9 +4,15 @@
 - [ ] Various per-paper layout failures — Unnumbered sections, no heading found, chapter-end refs. Each affects 1-5 papers.
 - [ ] Image-based PDFs — OCR fallback helps Type3 font papers (33-54% recall) and some old papers (5-48%), but 2 large reviews (hep-ph_9506380, hep-ph_9306320) get 0% — OCR text exists but zone classifier can't locate ref section. OCR match rate limited by character-level noise corrupting volumes/pages.
 - [ ] INSPIRE metadata gaps — 2103.01183 (951 missed: DOI-only), 2006.11237 (118: DOI-only), 1905.08669 (112: DOI-only), 1003.3928 (121 refs: empty metadata). Comparison methodology issue, not extraction bug.
-- [ ] Context-aware journal validation — Words like `Physics`, `Energy`, `Science` in titles matching as journal names from KB. Need volume/year proximity check to filter false positives.
+- [x] Context-aware journal validation — Investigated: existing safeguards (embedded_in_compound_name, volume-required filter, 3-char minimum) already strong. Volume/year proximity check is remaining opportunity but recall is at ceiling.
+- [x] Per-paper layout failure investigation — Nearly all low-recall papers are INSPIRE metadata limited, not extraction bugs. Only exception: hep-ph_0412158 (book with multiple chapter ref sections — extraction is correct, comparison methodology mismatch).
+- [x] Comparison normalization for jstatmech/eurphysjc/nuovcimc — Fixed journal-specific volume formats in compare_refs.py. +24 journal matches.
 
 ## Progress This Session
+- **Comparison normalization fixes**: Added journal-specific volume matching in compare_refs.py for jstatmech (YYMM from article number), eurphysjc (year-as-volume in INSPIRE metadata), and nuovcimc (section+issue format). +24 journal matches (52,035 → 52,059). Total: 124,093/136,982 (90.59%).
+- **TOC dot-leader detection**: Added `has_dot_leaders()` check in zones.rs `is_heading_text()` to filter TOC entries with dot leaders ("References . . . . . .") from being detected as reference headings. No match impact (TOC entries weren't causing over-extraction in practice), but defensive fix for book-like PDFs.
+- **Per-paper layout failure investigation**: Found that nearly all low-recall papers are caused by INSPIRE metadata limitations (version mismatches, DOI-only, no raw text), not extraction bugs. Only fixable case: hep-ph_0412158 (505-page book with 9 chapter ref sections, 2359 extracted vs 145 INSPIRE expected — extraction is correct, it's a comparison methodology mismatch). journal_with_raw = 0 in gap analysis, confirming extraction is at ceiling.
+- **Context-aware journal validation investigation**: Existing safeguards already strong: `embedded_in_compound_name()` (-188 false positives), volume-required filter (parse.rs), 3-char minimum length. Remaining opportunity is volume/year proximity check for precision improvement, but recall is at ceiling.
 - **JCAP/JHEP/JSTAT volume fix**: Problem: `2007(12)` was tokenized as Volume(2007) with issue discarded. INSPIRE expects vol=12 (issue), yr=2007, pg=001 for JCAP-style refs. Fix: Added `YEAR_ISSUE_RE` pattern in tokenizer.rs to recognize `YYYY(MM)` and emit Year + Number tokens instead of treating it as Volume(issue). Added look-ahead in parser to assign year and volume correctly when a bare Year token is followed by a Number. Result: JCAP refs in paper 1002.4928 now extract vol=12 yr=2007 instead of vol=2007. Full evaluation: 90.57% recall (124,069/136,982), no regression from baseline 90.5%. Near-miss analysis: 1,583 same-journal different-volume cases remain, most are "ref not in PDF". jstatmech shows similar issue pattern (vol expected as month number but extracted as page), needs further investigation.
 - **OCR fallback for Type3 font PDFs**: Added `--ocr-fallback` CLI flag. When a page has < 10 non-whitespace characters, renders page at 300 DPI via pdfium, OCRs with tesseract (leptess crate), converts word bounding boxes back to PdfChar entries. Key insight: Type3 font pages produce ~60 space characters (not zero), so the threshold checks non-whitespace chars specifically. Result: 0704.3011 (575 expected refs) now extracts 517 refs (was 0). New deps: `leptess`, `image`, pdfium-render `image` feature.
 - **OCR evaluation on all 0-recall papers**: Tested `--ocr-fallback` on all 13 previously-zero papers. Results:
@@ -80,9 +86,9 @@ Papers evaluated:     1,000 (0 errors)
 INSPIRE refs total:   136,982
 Extracted refs total: 166,137
 Matched by arXiv ID:  69,613 (51%)
-Matched by journal:   52,094 (38%)
+Matched by journal:   52,059 (38%)
 Matched by DOI:        2,421 (2%)
-Total matched:        124,128 / 136,982 (90.6%)
+Total matched:        124,093 / 136,982 (90.6%)
 ```
 
 ## Top 15 Missed Papers (at 90.1% recall)

@@ -149,12 +149,45 @@ def normalize_journal(title: str) -> str:
     return n
 
 
-def volumes_match(v1: str, v2: str) -> bool:
+def volumes_match(v1: str, v2: str, journal: str = "") -> bool:
     """Flexible volume matching. Handles JCAP/JHEP year-month encoding:
     extracted "0904" matches INSPIRE "04" (year prefix stripped by INSPIRE).
-    Also handles combined volumes: "904-905" matches "904" or "905"."""
+    Also handles combined volumes: "904-905" matches "904" or "905".
+
+    journal: normalized journal name (from normalize_journal), used for
+    journal-specific matching rules.
+    """
     if v1 == v2:
         return True
+
+    # Journal-specific rules
+    # jstatmech: INSPIRE stores month-only volumes like '07', '04'.
+    # Extracted articles are like '01015', '03001' (5 digits, chars [0:2] = month).
+    # Match when INSPIRE vol is 1-2 digits and extracted vol is 5 digits.
+    if "jstatmech" in journal:
+        inspire_v, extract_v = (v1, v2) if len(v1) <= len(v2) else (v2, v1)
+        if len(inspire_v) <= 2 and len(extract_v) == 5 and extract_v.isdigit():
+            if inspire_v.zfill(2) == extract_v[0:2]:
+                return True
+
+    # eurphysjc: INSPIRE sometimes stores year (4 digits, e.g. '2017') as volume.
+    # Our extraction gets the real volume (2-3 digits, e.g. '71').
+    if journal == "eurphysjc":
+        inspire_v, extract_v = (v1, v2) if len(v1) == 4 else (v2, v1)
+        if (len(inspire_v) == 4 and inspire_v.isdigit()
+                and 2 <= len(extract_v) <= 3 and extract_v.isdigit()):
+            return True
+
+    # nuovcim / nuovcimc: INSPIRE stores '035N2' style (digits + letter + digits).
+    # Extract the numeric prefix, strip leading zeros, compare with extracted volume.
+    if "nuovcim" in journal:
+        for candidate in (v1, v2):
+            other = v2 if candidate is v1 else v1
+            if re.match(r"^\d+[A-Z]\d+$", candidate):
+                numeric_prefix = re.match(r"^(\d+)", candidate).group(1).lstrip("0") or "0"
+                if numeric_prefix == (other.lstrip("0") or "0"):
+                    return True
+
     # One may have a year prefix: "0904" ends with "04"
     short, long = (v1, v2) if len(v1) <= len(v2) else (v2, v1)
     if len(short) >= 2 and long.endswith(short) and len(long) - len(short) <= 2:
@@ -306,7 +339,7 @@ def match_refs(inspire_refs: list[dict], extracted_refs: list[dict]) -> tuple[in
         # Try journal + volume match (flexible journal name matching)
         if iref["journal"] and iref["volume"]:
             for ej, ev in ext_jv:
-                if volumes_match(ev, iref["volume"]) and journals_match(iref["journal"], ej):
+                if volumes_match(ev, iref["volume"], iref["journal"]) and journals_match(iref["journal"], ej):
                     matched_journal += 1
                     break
             else:

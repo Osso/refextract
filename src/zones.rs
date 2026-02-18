@@ -120,7 +120,49 @@ fn strip_trailing_paren_range(text: &str) -> &str {
     }
 }
 
+/// Detect dot-leader patterns used in Tables of Contents, e.g.:
+///   "References . . . . . . . ."  (space-separated dots)
+///   "References..........."       (consecutive dots)
+///   "References … … …"           (ellipsis characters, Unicode U+2026)
+/// Three or more dots (consecutive or space-separated) signals a TOC entry.
+fn has_dot_leaders(text: &str) -> bool {
+    // Check for 3+ consecutive ASCII dots
+    if text.contains("...") {
+        return true;
+    }
+    // Check for 3+ consecutive Unicode ellipsis characters (…)
+    if text.contains("\u{2026}\u{2026}\u{2026}") {
+        return true;
+    }
+    // Check for space-separated dots: ". . ." (dot, space, dot, space, dot)
+    // Count how many isolated dots appear in a row
+    let chars: Vec<char> = text.chars().collect();
+    let mut dot_run = 0usize;
+    let mut i = 0;
+    while i < chars.len() {
+        if chars[i] == '.' || chars[i] == '\u{2026}' {
+            dot_run += 1;
+            if dot_run >= 3 {
+                return true;
+            }
+            i += 1;
+        } else if chars[i] == ' ' && i + 1 < chars.len() && (chars[i + 1] == '.' || chars[i + 1] == '\u{2026}') {
+            // Space before another dot: keep the run going
+            i += 1;
+        } else {
+            dot_run = 0;
+            i += 1;
+        }
+    }
+    false
+}
+
 fn is_heading_text(text: &str) -> bool {
+    // Reject TOC entries: lines with dot leaders like "References . . . . ." or "References....."
+    // Three or more consecutive dots (with optional spaces between) indicate a TOC page entry.
+    if has_dot_leaders(text) {
+        return false;
+    }
     // Strip trailing punctuation (colon, period) and parenthesized ranges
     // like "(36)-(84)" in "References (36)-(84)"
     let text = text.trim_end_matches([':', '.']);
