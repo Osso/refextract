@@ -74,7 +74,11 @@ fn main() -> Result<()> {
     let batch = cli.files.len() > 1;
 
     // Force KB initialization upfront (amortize ~500ms regex compilation).
-    let _ = (&*kb::JOURNAL_TITLES, &*kb::JOURNAL_ABBREVS, &*kb::REPORT_NUMBERS);
+    let _ = (
+        &*kb::JOURNAL_TITLES,
+        &*kb::JOURNAL_ABBREVS,
+        &*kb::REPORT_NUMBERS,
+    );
 
     let doi_cache = if !cli.no_doi_lookup {
         Some(doi::DoiCache::open()?)
@@ -190,15 +194,11 @@ fn classify_all_pages(
     page_chars
         .iter()
         .zip(all_blocks.iter())
-        .map(|(pc, blocks)| {
-            zones::classify_page(blocks, pc.page_num, pc.height, body_font_size)
-        })
+        .map(|(pc, blocks)| zones::classify_page(blocks, pc.page_num, pc.height, body_font_size))
         .collect()
 }
 
-fn parse_all_references(
-    raw_refs: &[types::RawReference],
-) -> Vec<ParsedReference> {
+fn parse_all_references(raw_refs: &[types::RawReference]) -> Vec<ParsedReference> {
     raw_refs
         .iter()
         .flat_map(|raw| {
@@ -211,9 +211,7 @@ fn parse_all_references(
 /// Split reference entries that contain semicolons into sub-references.
 /// In HEP papers, semicolons within a single numbered reference entry
 /// typically separate distinct citations (e.g., "[1] Author1; Author2").
-fn split_semicolon_subrefs(
-    refs: Vec<types::RawReference>,
-) -> Vec<types::RawReference> {
+fn split_semicolon_subrefs(refs: Vec<types::RawReference>) -> Vec<types::RawReference> {
     let mut result = Vec::new();
     for raw in refs {
         if !raw.text.contains(';') {
@@ -258,10 +256,10 @@ fn split_semicolon_subrefs(
 fn looks_like_citation(text: &str) -> bool {
     use once_cell::sync::Lazy;
     use regex::Regex;
-    static YEAR_RE: Lazy<Regex> =
-        Lazy::new(|| Regex::new(r"(?:19|20)\d{2}").unwrap());
-    static ARXIV_RE: Lazy<Regex> =
-        Lazy::new(|| Regex::new(r"(?:arXiv|hep-|astro-|gr-qc|cond-mat|nucl-|math-|quant-ph|physics/)").unwrap());
+    static YEAR_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?:19|20)\d{2}").unwrap());
+    static ARXIV_RE: Lazy<Regex> = Lazy::new(|| {
+        Regex::new(r"(?:arXiv|hep-|astro-|gr-qc|cond-mat|nucl-|math-|quant-ph|physics/)").unwrap()
+    });
 
     YEAR_RE.is_match(text)
         || ARXIV_RE.is_match(text)

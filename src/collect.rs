@@ -17,9 +17,7 @@ pub fn collect_references(zoned_pages: &[Vec<ZonedBlock>]) -> Vec<RawReference> 
 }
 
 /// Find the reference section and extract individual references.
-fn collect_reference_section(
-    zoned_pages: &[Vec<ZonedBlock>],
-) -> Vec<RawReference> {
+fn collect_reference_section(zoned_pages: &[Vec<ZonedBlock>]) -> Vec<RawReference> {
     let headings = find_all_reference_headings(zoned_pages);
     if !headings.is_empty() {
         let mut all_blocks = Vec::new();
@@ -89,11 +87,7 @@ fn find_all_reference_headings(zoned_pages: &[Vec<ZonedBlock>]) -> Vec<RefHeadin
 }
 
 /// Verify a heading by checking if blocks after it contain citation-like content.
-fn has_refs_after(
-    zoned_pages: &[Vec<ZonedBlock>],
-    page_idx: usize,
-    block_idx: usize,
-) -> bool {
+fn has_refs_after(zoned_pages: &[Vec<ZonedBlock>], page_idx: usize, block_idx: usize) -> bool {
     let mut checked = 0;
     let mut citation_score = 0;
     // Check remaining blocks on the heading page.
@@ -132,10 +126,7 @@ fn has_refs_after(
     false
 }
 
-fn gather_ref_blocks(
-    zoned_pages: &[Vec<ZonedBlock>],
-    loc: &RefHeadingLoc,
-) -> Vec<(String, usize)> {
+fn gather_ref_blocks(zoned_pages: &[Vec<ZonedBlock>], loc: &RefHeadingLoc) -> Vec<(String, usize)> {
     let mut ref_blocks = Vec::new();
 
     let first_full_block = if let Some(line_idx) = loc.line_idx {
@@ -166,7 +157,10 @@ fn detect_marker_format(
     zoned_pages: &[Vec<ZonedBlock>],
     heading_page: usize,
 ) -> bool {
-    if ref_blocks.iter().any(|(text, _)| count_markers_in_text(text) > 0) {
+    if ref_blocks
+        .iter()
+        .any(|(text, _)| count_markers_in_text(text) > 0)
+    {
         return true;
     }
     if heading_page + 1 < zoned_pages.len() {
@@ -228,7 +222,8 @@ fn gather_subsequent_pages(
             }
             page_blocks_buf.push((zb.block.text(), zb.page_num));
         }
-        if !use_markers && page_citation_lines >= 3
+        if !use_markers
+            && page_citation_lines >= 3
             && page_total_lines > 0
             && page_citation_lines * 2 >= page_total_lines
         {
@@ -260,9 +255,7 @@ fn is_standalone_ref_heading(block: &crate::types::Block) -> bool {
 }
 
 /// Collect references from footnote zones.
-fn collect_footnote_refs(
-    zoned_pages: &[Vec<ZonedBlock>],
-) -> Vec<RawReference> {
+fn collect_footnote_refs(zoned_pages: &[Vec<ZonedBlock>]) -> Vec<RawReference> {
     let mut refs = Vec::new();
     for page_blocks in zoned_pages {
         let footnote_blocks: Vec<(String, usize)> = page_blocks
@@ -271,8 +264,7 @@ fn collect_footnote_refs(
             .map(|zb| (zb.block.text(), zb.page_num))
             .collect();
         if !footnote_blocks.is_empty() {
-            let page_refs =
-                split_into_references(&footnote_blocks, ReferenceSource::Footnote);
+            let page_refs = split_into_references(&footnote_blocks, ReferenceSource::Footnote);
             refs.extend(page_refs.into_iter().filter(is_citation_like));
         }
     }
@@ -285,15 +277,11 @@ fn is_citation_like(r: &RawReference) -> bool {
 }
 
 fn has_year_pattern(text: &str) -> bool {
-    static YEAR_RE: Lazy<Regex> =
-        Lazy::new(|| Regex::new(r"\b(19|20)\d{2}\b").unwrap());
+    static YEAR_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"\b(19|20)\d{2}\b").unwrap());
     YEAR_RE.is_match(text)
 }
 
-fn dedup_and_merge(
-    section_refs: &mut Vec<RawReference>,
-    footnote_refs: Vec<RawReference>,
-) {
+fn dedup_and_merge(section_refs: &mut Vec<RawReference>, footnote_refs: Vec<RawReference>) {
     for fref in footnote_refs {
         let is_dup = section_refs
             .iter()

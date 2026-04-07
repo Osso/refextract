@@ -29,7 +29,10 @@ pub struct ReportNumberMatch {
 
 impl TrieNode {
     fn new() -> Self {
-        TrieNode { children: HashMap::new(), leaves: Vec::new() }
+        TrieNode {
+            children: HashMap::new(),
+            leaves: Vec::new(),
+        }
     }
 }
 
@@ -71,9 +74,7 @@ impl ReportNumberTrie {
             // Separators always route through the space edge, consuming all consecutive ones.
             if ch == b' ' || ch == b'\t' || ch == b'-' || ch == b'/' {
                 if let Some(child) = node.children.get(&b' ') {
-                    while pos < bytes.len()
-                        && matches!(bytes[pos], b' ' | b'\t' | b'-' | b'/')
-                    {
+                    while pos < bytes.len() && matches!(bytes[pos], b' ' | b'\t' | b'-' | b'/') {
                         pos += 1;
                     }
                     node = child;
@@ -143,12 +144,7 @@ pub fn build_report_trie(kb_text: &str) -> ReportNumberTrie {
     ReportNumberTrie { root }
 }
 
-fn insert_into_trie(
-    root: &mut TrieNode,
-    prefix: &str,
-    standardized: &str,
-    numerations: &[String],
-) {
+fn insert_into_trie(root: &mut TrieNode, prefix: &str, standardized: &str, numerations: &[String]) {
     if numerations.is_empty() {
         return;
     }
@@ -162,7 +158,10 @@ fn insert_into_trie(
     // Spaces in the prefix represent flexible separators (space/tab/dash/slash).
     let mut node = root;
     for byte in normalized.bytes() {
-        node = node.children.entry(byte).or_insert_with(|| Box::new(TrieNode::new()));
+        node = node
+            .children
+            .entry(byte)
+            .or_insert_with(|| Box::new(TrieNode::new()));
     }
 
     // Build numeration regex anchored to start of remaining text.
@@ -352,11 +351,7 @@ fn numeration_to_regex(dsl: &str) -> Option<String> {
 
 /// Try to emit a pass-through regex construct (escape, char class, group).
 /// Returns number of chars consumed, or None if not a regex construct.
-fn try_emit_regex_construct(
-    chars: &[char],
-    i: usize,
-    out: &mut String,
-) -> Option<usize> {
+fn try_emit_regex_construct(chars: &[char], i: usize, out: &mut String) -> Option<usize> {
     match chars[i] {
         '\\' if i + 1 < chars.len() => {
             out.push(chars[i]);
@@ -411,11 +406,7 @@ fn emit_group(chars: &[char], start: usize, out: &mut String) -> usize {
 
 /// Try to emit a DSL token (yyyy, yy, mm, 9?, 9, s, a).
 /// Returns number of chars consumed, or None.
-fn try_emit_dsl_token(
-    chars: &[char],
-    i: usize,
-    out: &mut String,
-) -> Option<usize> {
+fn try_emit_dsl_token(chars: &[char], i: usize, out: &mut String) -> Option<usize> {
     let remaining: String = chars[i..].iter().collect();
 
     if remaining.starts_with("yyyy") {
@@ -477,13 +468,16 @@ pub fn match_journal_name(text: &str, pos: usize) -> Option<(usize, String)> {
         return None;
     }
     let suffix = &text[pos..];
-    match_full_journal(suffix)
-        .or_else(|| match_abbrev_journal(suffix))
+    match_full_journal(suffix).or_else(|| match_abbrev_journal(suffix))
 }
 
 fn match_full_journal(suffix: &str) -> Option<(usize, String)> {
     // Must start with a letter (some journals like "npj Quantum Inf." start lowercase)
-    if !suffix.as_bytes().first().is_some_and(|b| b.is_ascii_alphabetic()) {
+    if !suffix
+        .as_bytes()
+        .first()
+        .is_some_and(|b| b.is_ascii_alphabetic())
+    {
         return None;
     }
     let normalized = normalize_abbrev(suffix);
@@ -565,9 +559,7 @@ fn find_original_byte_len(original: &str, norm_len: usize) -> usize {
             if norm_pos > 0 {
                 norm_pos += 1;
             }
-            while orig_pos < bytes.len()
-                && matches!(bytes[orig_pos], b'.' | b':' | b' ' | b'\t')
-            {
+            while orig_pos < bytes.len() && matches!(bytes[orig_pos], b'.' | b':' | b' ' | b'\t') {
                 orig_pos += 1;
             }
             continue;

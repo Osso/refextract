@@ -4,50 +4,42 @@ use regex::Regex;
 use crate::kb;
 use crate::types::{Token, TokenKind};
 
-static DOI_RE: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"10\.\d{4,}/[^\s,;]+").unwrap());
+static DOI_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"10\.\d{4,}/[^\s,;]+").unwrap());
 
-static ARXIV_NEW_RE: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"\d{4}\.\d{4,5}(?:v\d+)?").unwrap());
+static ARXIV_NEW_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"\d{4}\.\d{4,5}(?:v\d+)?").unwrap());
 
 static ARXIV_OLD_RE: Lazy<Regex> = Lazy::new(|| {
     Regex::new(r"(?:hep|astro|cond|gr|math|nucl|physics|quant|cs|nlin|q-bio|q-fin|q-alg|alg-geom|solv-int|chao-dyn|adap-org|comp-gas|patt-sol|funct-an|dg-ga|mtrl-th|supr-con|acc-phys|ao-sci|bayes-an|chem-ph|plasm-ph|atom-ph|stat)(?:[\s.\-][a-z]{2,4})?[\s/]+\d{7}(?:v\d+)?").unwrap()
 });
 
 /// Matches bare arXiv format: "arXiv:0510213 [hep-ph]" — 7-digit number with bracketed category
-static ARXIV_BARE_RE: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"(?i)arXiv:(\d{7})\s*\[([a-z-]+(?:\.[a-zA-Z-]+)?)\]").unwrap()
-});
+static ARXIV_BARE_RE: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"(?i)arXiv:(\d{7})\s*\[([a-z-]+(?:\.[a-zA-Z-]+)?)\]").unwrap());
 
-static URL_RE: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"https?://[^\s,;]+").unwrap());
+static URL_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"https?://[^\s,;]+").unwrap());
 
 /// Matches arXiv ID inside a URL: arxiv.org/abs/<id> or arxiv.org/pdf/<id>
-static ARXIV_URL_RE: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"(?i)arxiv\.org/(?:abs|pdf)/(.+)").unwrap()
-});
+static ARXIV_URL_RE: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"(?i)arxiv\.org/(?:abs|pdf)/(.+)").unwrap());
 
 static ISBN_RE: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"(?:978|979)[-\s]?\d[-\s]?\d{2,5}[-\s]?\d{2,5}[-\s]?\d").unwrap());
 
-static YEAR_RE: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"^\(?((?:19|20)\d{2})[a-z]?\)?$").unwrap());
+static YEAR_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"^\(?((?:19|20)\d{2})[a-z]?\)?$").unwrap());
 
-static PAGE_RANGE_RE: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"\d+\s*[-–—]\s*\d+").unwrap());
+static PAGE_RANGE_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"\d+\s*[-–—]\s*\d+").unwrap());
 
-static NUMBER_RE: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"\d+").unwrap());
+static NUMBER_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"\d+").unwrap());
 
 /// Compact volume(year)page: "417(1994)181" or "417(1994)181-193"
-static VOLUME_YEAR_PAGE_RE: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"^(\d+)\(((?:19|20)\d{2})\)(\d+(?:\s*[-–—]\s*\d+)?)$").unwrap()
-});
+static VOLUME_YEAR_PAGE_RE: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"^(\d+)\(((?:19|20)\d{2})\)(\d+(?:\s*[-–—]\s*\d+)?)$").unwrap());
 
 /// Volume:page: "70:094505" or "95:122002" or "21:S403–S408"
 /// Also old-style section: "76B:436" or "40A:181"
-static VOLUME_COLON_PAGE_RE: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"^(\d+)([A-D])?:([A-Za-z]?\d+(?:\s*[-–—]\s*[A-Za-z]?\d+)?)$").unwrap());
+static VOLUME_COLON_PAGE_RE: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r"^(\d+)([A-D])?:([A-Za-z]?\d+(?:\s*[-–—]\s*[A-Za-z]?\d+)?)$").unwrap()
+});
 
 /// Volume(issue):page: "72(2):1346–1349" or "23(21):1704–1706"
 static VOLUME_ISSUE_COLON_PAGE_RE: Lazy<Regex> = Lazy::new(|| {
@@ -143,10 +135,7 @@ fn convert_arxiv_url_spans(spans: &mut [Span]) {
                     normalize_arxiv_old(&id)
                 } else {
                     // Strip version suffix for new-style
-                    id.split('v')
-                        .next()
-                        .unwrap_or(&id)
-                        .to_string()
+                    id.split('v').next().unwrap_or(&id).to_string()
                 };
             }
         }
@@ -225,12 +214,7 @@ fn normalize_arxiv_old(raw: &str) -> String {
     result
 }
 
-fn add_regex_spans(
-    spans: &mut Vec<Span>,
-    text: &str,
-    re: &Regex,
-    kind: TokenKind,
-) {
+fn add_regex_spans(spans: &mut Vec<Span>, text: &str, re: &Regex, kind: TokenKind) {
     for m in re.find_iter(text) {
         if !overlaps_existing(spans, m.start(), m.end()) {
             spans.push(Span {
@@ -247,15 +231,16 @@ fn add_regex_spans(
 fn add_report_number_spans(spans: &mut Vec<Span>, text: &str) {
     if let Some((matched, standardized)) = kb::match_report_number(text)
         && let Some(pos) = text.find(&matched)
-            && !overlaps_existing(spans, pos, pos + matched.len()) {
-                spans.push(Span {
-                    start: pos,
-                    end: pos + matched.len(),
-                    kind: TokenKind::ReportNumber,
-                    text: matched,
-                    normalized: Some(standardized),
-                });
-            }
+        && !overlaps_existing(spans, pos, pos + matched.len())
+    {
+        spans.push(Span {
+            start: pos,
+            end: pos + matched.len(),
+            kind: TokenKind::ReportNumber,
+            text: matched,
+            normalized: Some(standardized),
+        });
+    }
 }
 
 fn add_journal_name_spans(spans: &mut Vec<Span>, text: &str) {
@@ -328,12 +313,7 @@ fn embedded_in_compound_name(text: &str, pos: usize, len: usize) -> bool {
 /// Extend a journal match to include a section letter if present.
 /// "Phys. Rev." + " D31" → "Phys. Rev. D" (volume "31" becomes a separate token).
 /// "Nucl. Phys." + " B253" → "Nucl. Phys. B"
-fn extend_section_letter(
-    text: &str,
-    pos: usize,
-    len: usize,
-    abbrev: String,
-) -> (usize, String) {
+fn extend_section_letter(text: &str, pos: usize, len: usize, abbrev: String) -> (usize, String) {
     let remaining = text.as_bytes();
     let remaining = &remaining[pos + len..];
     let mut i = 0;
@@ -383,13 +363,13 @@ fn find_quote_pairs(text: &str, open: char, close: char, regions: &mut Vec<(usiz
 }
 
 fn in_quoted_region(pos: usize, regions: &[(usize, usize)]) -> bool {
-    regions.iter().any(|(start, end)| pos >= *start && pos < *end)
+    regions
+        .iter()
+        .any(|(start, end)| pos >= *start && pos < *end)
 }
 
 fn overlaps_existing(spans: &[Span], start: usize, end: usize) -> bool {
-    spans
-        .iter()
-        .any(|s| start < s.end && end > s.start)
+    spans.iter().any(|s| start < s.end && end > s.start)
 }
 
 fn remove_overlapping_spans(spans: &mut Vec<Span>) {
@@ -442,7 +422,10 @@ fn classify_gap(text: &str, tokens: &mut Vec<Token>) {
         // Common in two-column PDFs where "179:1547– 1553" spans a line break
         if i + 1 < words.len()
             && ends_with_dash(words[i])
-            && words[i + 1].as_bytes().first().is_some_and(|b| b.is_ascii_digit())
+            && words[i + 1]
+                .as_bytes()
+                .first()
+                .is_some_and(|b| b.is_ascii_digit())
         {
             let joined = format!("{}{}", words[i], words[i + 1]);
             classify_word(&joined, tokens);
@@ -529,33 +512,61 @@ fn classify_word(word: &str, tokens: &mut Vec<Token>) {
         || clean_lower.ends_with(":ibid")
         || clean_lower.ends_with(":ibid.")
     {
-        tokens.push(Token { kind: TokenKind::Ibid, text: word.to_string(), normalized: None });
+        tokens.push(Token {
+            kind: TokenKind::Ibid,
+            text: word.to_string(),
+            normalized: None,
+        });
         return;
     }
     if is_punctuation(word) {
-        tokens.push(Token { kind: TokenKind::Punctuation, text: word.to_string(), normalized: None });
+        tokens.push(Token {
+            kind: TokenKind::Punctuation,
+            text: word.to_string(),
+            normalized: None,
+        });
         return;
     }
     if let Some(caps) = YEAR_RE.captures(clean) {
         let year: u32 = caps[1].parse().unwrap_or(0);
         if (1900..=2030).contains(&year) {
-            tokens.push(Token { kind: TokenKind::Year, text: word.to_string(), normalized: Some(caps[1].to_string()) });
+            tokens.push(Token {
+                kind: TokenKind::Year,
+                text: word.to_string(),
+                normalized: Some(caps[1].to_string()),
+            });
             return;
         }
     }
     if PAGE_RANGE_RE.is_match(clean) {
-        tokens.push(Token { kind: TokenKind::PageRange, text: word.to_string(), normalized: None });
+        tokens.push(Token {
+            kind: TokenKind::PageRange,
+            text: word.to_string(),
+            normalized: None,
+        });
         return;
     }
     if NUMBER_RE.is_match(clean) && clean.chars().all(|c| c.is_ascii_digit()) {
-        tokens.push(Token { kind: TokenKind::Number, text: word.to_string(), normalized: None });
+        tokens.push(Token {
+            kind: TokenKind::Number,
+            text: word.to_string(),
+            normalized: None,
+        });
         return;
     }
     if let Some(collab) = kb::match_collaboration(clean) {
-        tokens.push(Token { kind: TokenKind::Collaboration, text: word.to_string(), normalized: Some(collab) });
+        tokens.push(Token {
+            kind: TokenKind::Collaboration,
+            text: word.to_string(),
+            normalized: Some(collab),
+        });
         return;
     }
-    tokens.push(Token { kind: TokenKind::Word, text: word.to_string(), normalized: None });
+    tokens.push(Token {
+        kind: TokenKind::Word,
+        text: word.to_string(),
+        normalized: None,
+    });
 }
 
 fn push_number(tokens: &mut Vec<Token>, num: &str) {
@@ -589,5 +600,8 @@ fn push_page_or_number(tokens: &mut Vec<Token>, page: &str) {
 
 fn is_punctuation(word: &str) -> bool {
     let trimmed = word.trim();
-    matches!(trimmed, "," | "." | ";" | ":" | "and" | "et" | "al." | "al" | "&" | "-" | "–" | "—")
+    matches!(
+        trimmed,
+        "," | "." | ";" | ":" | "and" | "et" | "al." | "al" | "&" | "-" | "–" | "—"
+    )
 }

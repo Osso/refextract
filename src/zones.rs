@@ -20,11 +20,7 @@ pub fn classify_page(
         .collect()
 }
 
-fn classify_block(
-    block: &Block,
-    page_height: f32,
-    body_font_size: f32,
-) -> ZoneKind {
+fn classify_block(block: &Block, page_height: f32, body_font_size: f32) -> ZoneKind {
     let relative_y = block.y / page_height;
     let block_bottom = (block.y - block.height) / page_height;
 
@@ -39,9 +35,7 @@ fn classify_block(
     }
 
     // Footnote: bottom ~25%, smaller font, starts with superscript marker
-    if block_bottom < 0.25
-        && block.font_size < body_font_size * 0.9
-        && has_superscript_start(block)
+    if block_bottom < 0.25 && block.font_size < body_font_size * 0.9 && has_superscript_start(block)
     {
         return ZoneKind::Footnote;
     }
@@ -146,7 +140,10 @@ fn has_dot_leaders(text: &str) -> bool {
                 return true;
             }
             i += 1;
-        } else if chars[i] == ' ' && i + 1 < chars.len() && (chars[i + 1] == '.' || chars[i + 1] == '\u{2026}') {
+        } else if chars[i] == ' '
+            && i + 1 < chars.len()
+            && (chars[i + 1] == '.' || chars[i + 1] == '\u{2026}')
+        {
             // Space before another dot: keep the run going
             i += 1;
         } else {
@@ -170,10 +167,7 @@ fn is_heading_text(text: &str) -> bool {
     // Exact matches
     if matches!(
         text,
-        "REFERENCES"
-            | "BIBLIOGRAPHY"
-            | "REFERENCES AND NOTES"
-            | "LITERATURE CITED"
+        "REFERENCES" | "BIBLIOGRAPHY" | "REFERENCES AND NOTES" | "LITERATURE CITED"
     ) {
         return true;
     }
@@ -217,9 +211,7 @@ pub fn compute_body_font_size(all_blocks: &[Vec<Block>]) -> f32 {
         for block in blocks {
             for line in &block.lines {
                 let key = (line.font_size * 10.0) as i32;
-                if let Some(entry) =
-                    size_counts.iter_mut().find(|(k, _)| *k == key)
-                {
+                if let Some(entry) = size_counts.iter_mut().find(|(k, _)| *k == key) {
                     entry.1 += line.words.len();
                 } else {
                     size_counts.push((key, line.words.len()));

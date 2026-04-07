@@ -30,7 +30,7 @@ QUERIES=(
 )
 
 PAPERS_PER_QUERY=100
-TOTAL_TARGET=1000
+TOTAL_TARGET=1200
 
 downloaded_count() {
     find "$PDF_DIR" -name '*.pdf' 2>/dev/null | wc -l
@@ -110,7 +110,10 @@ for query in "${QUERIES[@]}"; do
     sort_order=$(echo "$query" | grep -oP 'sort=\K\w+' || echo "unknown")
     echo "--- Fetching: ${category} (${sort_order}) ---"
 
-    page=1
+    # Resume: skip pages already consumed (PAPERS_PER_QUERY / 25 pages per query)
+    # Each page has 25 results, so 100 papers = 4 pages already fetched
+    skip_pages=$(( PAPERS_PER_QUERY / 25 ))
+    page=$(( skip_pages + 1 ))
     fetched_in_query=0
 
     while (( fetched_in_query < PAPERS_PER_QUERY )); do
@@ -157,7 +160,6 @@ for query in "${QUERIES[@]}"; do
         done <<< "$papers"
 
         page=$((page + 1))
-
         # Small delay between INSPIRE API calls
         sleep 1
     done

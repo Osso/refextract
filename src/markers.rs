@@ -32,7 +32,11 @@ pub(crate) fn score_citation_block(block: &crate::types::Block) -> usize {
         .map(|l| {
             let text = l.text();
             if let Some(m) = LINE_MARKER_RE.find(&text) {
-                if has_citation_content(&text[m.end()..]) { 2 } else { 0 }
+                if has_citation_content(&text[m.end()..]) {
+                    2
+                } else {
+                    0
+                }
             } else if has_citation_content(&text) {
                 1
             } else {
@@ -58,15 +62,11 @@ pub(crate) fn has_any_marker(block: &crate::types::Block) -> bool {
 }
 
 pub(crate) fn count_markers_in_text(text: &str) -> usize {
-    text.lines()
-        .filter(|l| LINE_MARKER_RE.is_match(l))
-        .count()
+    text.lines().filter(|l| LINE_MARKER_RE.is_match(l)).count()
 }
 
 /// Fallback: find references by scanning blocks that contain numbered markers.
-pub(crate) fn collect_refs_by_markers(
-    zoned_pages: &[Vec<ZonedBlock>],
-) -> Vec<RawReference> {
+pub(crate) fn collect_refs_by_markers(zoned_pages: &[Vec<ZonedBlock>]) -> Vec<RawReference> {
     let ref_lines = collect_marker_block_lines(zoned_pages);
     if ref_lines.is_empty() {
         return Vec::new();
@@ -78,9 +78,7 @@ pub(crate) fn collect_refs_by_markers(
 /// Strategy 1: blocks with 3+ markers (dense reference blocks).
 /// Strategy 2: individual marker blocks from the tail of the document.
 /// Strategy 3: superscript bare-number markers on their own lines/blocks.
-fn collect_marker_block_lines(
-    zoned_pages: &[Vec<ZonedBlock>],
-) -> Vec<(String, usize)> {
+fn collect_marker_block_lines(zoned_pages: &[Vec<ZonedBlock>]) -> Vec<(String, usize)> {
     let dense = collect_dense_marker_blocks(zoned_pages);
     let dense_markers: usize = dense
         .iter()
@@ -114,9 +112,7 @@ fn collect_marker_block_lines(
 }
 
 /// Blocks with 3+ markers AND citation content — dense reference lists.
-fn collect_dense_marker_blocks(
-    zoned_pages: &[Vec<ZonedBlock>],
-) -> Vec<(String, usize)> {
+fn collect_dense_marker_blocks(zoned_pages: &[Vec<ZonedBlock>]) -> Vec<(String, usize)> {
     let mut blocks = Vec::new();
     for page_blocks in zoned_pages {
         for zb in page_blocks {
@@ -158,9 +154,7 @@ fn is_dense_ref_block(block: &crate::types::Block) -> bool {
 /// Requires 5+ total markers to avoid false positives from numbered lists.
 /// Also uses citation content density to fill gaps between marker pages
 /// (handles author-date papers where lines rarely start with `(year)`).
-fn collect_trailing_marker_blocks(
-    zoned_pages: &[Vec<ZonedBlock>],
-) -> Vec<(String, usize)> {
+fn collect_trailing_marker_blocks(zoned_pages: &[Vec<ZonedBlock>]) -> Vec<(String, usize)> {
     let mut blocks = Vec::new();
     let mut pages_without_refs = 0;
 
@@ -189,8 +183,7 @@ fn collect_trailing_marker_blocks(
         let has_citation_density = page_citation_lines >= 3
             && page_total_lines > 0
             && page_citation_lines * 2 >= page_total_lines;
-        let page_has_refs =
-            page_has_markers || (!blocks.is_empty() && has_citation_density);
+        let page_has_refs = page_has_markers || (!blocks.is_empty() && has_citation_density);
         if page_has_refs {
             blocks.extend(page_blocks_collected);
             pages_without_refs = 0;
@@ -221,11 +214,8 @@ fn collect_trailing_marker_blocks(
 /// Strategy 3: Detect superscript-style bare-number markers.
 /// Some papers (e.g., PRL format) use small-font numbers as reference markers
 /// on separate lines/blocks, followed by regular-font citation text.
-fn collect_superscript_marker_refs(
-    zoned_pages: &[Vec<ZonedBlock>],
-) -> Vec<(String, usize)> {
-    static BARE_NUM_RE: Lazy<Regex> =
-        Lazy::new(|| Regex::new(r"^\s*(\d{1,4})\s*$").unwrap());
+fn collect_superscript_marker_refs(zoned_pages: &[Vec<ZonedBlock>]) -> Vec<(String, usize)> {
+    static BARE_NUM_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"^\s*(\d{1,4})\s*$").unwrap());
 
     let all_blocks: Vec<&ZonedBlock> = zoned_pages
         .iter()
@@ -294,8 +284,7 @@ fn find_superscript_pairs(
 
 /// Collect citation text from blocks following a bare-number marker.
 fn collect_citation_after(all_blocks: &[&ZonedBlock], start: usize) -> String {
-    static BARE_NUM: Lazy<Regex> =
-        Lazy::new(|| Regex::new(r"^\s*(\d{1,4})\s*$").unwrap());
+    static BARE_NUM: Lazy<Regex> = Lazy::new(|| Regex::new(r"^\s*(\d{1,4})\s*$").unwrap());
 
     let mut parts = Vec::new();
     for zb in all_blocks.iter().skip(start) {
@@ -366,8 +355,7 @@ pub(crate) fn split_into_references(
                         source,
                     );
                     current_marker = extract_marker(&caps);
-                    current_text =
-                        LINE_MARKER_RE.replace(line, "").trim().to_string();
+                    current_text = LINE_MARKER_RE.replace(line, "").trim().to_string();
                     current_page = *page_num;
                 }
             } else if !current_text.is_empty() {
@@ -379,7 +367,13 @@ pub(crate) fn split_into_references(
             }
         }
     }
-    flush_reference(&mut refs, &mut current_text, &current_marker, current_page, source);
+    flush_reference(
+        &mut refs,
+        &mut current_text,
+        &current_marker,
+        current_page,
+        source,
+    );
     split_author_date_blobs(&mut refs);
     refs
 }
@@ -419,15 +413,13 @@ static AUTHOR_START_RE: Lazy<Regex> = Lazy::new(|| {
 });
 
 /// Match "Surname I." pattern (no comma between surname and initial).
-static AUTHOR_START_NOCOMMA_RE: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"[A-Z][a-z]{2,}(?:[\s-][A-Z][a-z]+)* [A-Z]\.").unwrap()
-});
+static AUTHOR_START_NOCOMMA_RE: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"[A-Z][a-z]{2,}(?:[\s-][A-Z][a-z]+)* [A-Z]\.").unwrap());
 
 /// Bibliography label year-colon ending: "2005:" or "2013a:" at the end
 /// of a cite key label like "Aaij et al. 2013c:".
-static BIBLIO_YEAR_COLON_RE: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"(?:19|20)\d{2}[a-z]?\s*:").unwrap()
-});
+static BIBLIO_YEAR_COLON_RE: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"(?:19|20)\d{2}[a-z]?\s*:").unwrap());
 
 fn split_author_date_text(text: &str) -> Vec<String> {
     let split_positions = find_author_split_positions(text);
@@ -464,7 +456,9 @@ fn find_author_split_positions(text: &str) -> Vec<usize> {
     }
 
     for m in AUTHOR_START_NOCOMMA_RE.find_iter(text) {
-        if let Some(pos) = validate_split_position(text, m.start()) && !positions.contains(&pos) {
+        if let Some(pos) = validate_split_position(text, m.start())
+            && !positions.contains(&pos)
+        {
             positions.push(pos);
         }
     }
@@ -486,7 +480,9 @@ fn find_author_split_positions(text: &str) -> Vec<usize> {
 fn find_biblio_label_positions(text: &str) -> Vec<usize> {
     let mut positions = Vec::new();
     for m in BIBLIO_YEAR_COLON_RE.find_iter(text) {
-        if let Some(pos) = find_label_start(text, m.start()) && pos > 0 {
+        if let Some(pos) = find_label_start(text, m.start())
+            && pos > 0
+        {
             let before = text[..pos].trim_end();
             if !before.is_empty() && is_ref_boundary(before) {
                 positions.push(pos);
@@ -540,13 +536,11 @@ fn find_label_start(text: &str, year_pos: usize) -> Option<usize> {
         }
 
         // Accept: capitalized word (possibly hyphenated, like "Aguilar-Benitez")
-        let is_name = word
-            .split('-')
-            .all(|part| {
-                let mut chars = part.chars();
-                chars.next().is_some_and(|c| c.is_ascii_uppercase())
-                    && chars.all(|c| c.is_alphanumeric() || c == '\'')
-            });
+        let is_name = word.split('-').all(|part| {
+            let mut chars = part.chars();
+            chars.next().is_some_and(|c| c.is_ascii_uppercase())
+                && chars.all(|c| c.is_alphanumeric() || c == '\'')
+        });
         if is_name {
             continue;
         }
@@ -565,11 +559,7 @@ fn find_label_start(text: &str, year_pos: usize) -> Option<usize> {
     // Compute the byte offset in the original text
     // `trimmed` is `before.trim_end()` which is `text[..year_pos].trim_end()`
     // `pos` is relative to `trimmed`, which starts at byte 0 of `text`
-    if pos < trimmed.len() {
-        Some(pos)
-    } else {
-        None
-    }
+    if pos < trimmed.len() { Some(pos) } else { None }
 }
 
 fn validate_split_position(text: &str, author_pos: usize) -> Option<usize> {
@@ -612,10 +602,7 @@ fn is_ref_ending_period(before: &str) -> bool {
     if matches!(last_char, ']' | ')') || last_char.is_ascii_digit() {
         return true;
     }
-    let last_token = without_period
-        .split_whitespace()
-        .last()
-        .unwrap_or("");
+    let last_token = without_period.split_whitespace().last().unwrap_or("");
     let clean = last_token.trim_end_matches(',');
     !is_initial_token(clean)
 }

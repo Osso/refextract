@@ -6,11 +6,7 @@ use pdfium_render::prelude::*;
 use crate::types::{PageChars, PdfChar};
 
 /// Load a PDF and extract characters with positions from every page.
-pub fn extract_chars(
-    pdfium: &Pdfium,
-    path: &Path,
-    ocr_fallback: bool,
-) -> Result<Vec<PageChars>> {
+pub fn extract_chars(pdfium: &Pdfium, path: &Path, ocr_fallback: bool) -> Result<Vec<PageChars>> {
     let document = pdfium
         .load_pdf_from_file(path, None)
         .with_context(|| format!("Failed to load PDF: {}", path.display()))?;
@@ -23,11 +19,7 @@ pub fn extract_chars(
         .collect()
 }
 
-fn extract_page_chars(
-    page_idx: usize,
-    page: &PdfPage,
-    ocr_fallback: bool,
-) -> Result<PageChars> {
+fn extract_page_chars(page_idx: usize, page: &PdfPage, ocr_fallback: bool) -> Result<PageChars> {
     let text_page = page
         .text()
         .with_context(|| format!("Failed to load text for page {}", page_idx + 1))?;
@@ -42,7 +34,11 @@ fn extract_page_chars(
     if meaningful_chars < 10 && ocr_fallback {
         match crate::ocr::ocr_page(page, page_idx) {
             Ok(ocr_chars) if ocr_chars.len() > chars.len() => {
-                eprintln!("OCR fallback: page {} ({} chars)", page_idx + 1, ocr_chars.len());
+                eprintln!(
+                    "OCR fallback: page {} ({} chars)",
+                    page_idx + 1,
+                    ocr_chars.len()
+                );
                 chars = ocr_chars;
             }
             Ok(_) => {}

@@ -55,15 +55,13 @@ fn extract_identifiers(tokens: &[Token], result: &mut ParsedReference) {
                 result.isbn = Some(token.text.clone());
             }
             TokenKind::ReportNumber if result.report_number.is_none() => {
-                result.report_number =
-                    Some(token.normalized.clone().unwrap_or(token.text.clone()));
+                result.report_number = Some(token.normalized.clone().unwrap_or(token.text.clone()));
             }
             TokenKind::Url if result.url.is_none() => {
                 result.url = Some(token.text.clone());
             }
             TokenKind::Collaboration if result.collaboration.is_none() => {
-                result.collaboration =
-                    Some(token.normalized.clone().unwrap_or(token.text.clone()));
+                result.collaboration = Some(token.normalized.clone().unwrap_or(token.text.clone()));
             }
             _ => {}
         }
@@ -72,9 +70,7 @@ fn extract_identifiers(tokens: &[Token], result: &mut ParsedReference) {
 
 /// Walk tokens to find journal name + numeration (volume, year, page).
 fn extract_journal_info(tokens: &[Token], result: &mut ParsedReference) {
-    let journal_pos = tokens
-        .iter()
-        .position(|t| t.kind == TokenKind::JournalName);
+    let journal_pos = tokens.iter().position(|t| t.kind == TokenKind::JournalName);
 
     let Some(jpos) = journal_pos else {
         extract_standalone_year(tokens, result);
@@ -121,7 +117,9 @@ fn try_word_as_volume(token: &Token, result: &mut ParsedReference) -> bool {
     }
     if let Some((vol, page)) = extract_conference_volume(&token.text) {
         result.journal_volume = Some(vol);
-        if let Some(p) = page && result.journal_page.is_none() {
+        if let Some(p) = page
+            && result.journal_page.is_none()
+        {
             result.journal_page = Some(p);
         }
         return true;
@@ -141,32 +139,40 @@ fn assign_numeration(window: &[Token], result: &mut ParsedReference) {
             }
             // Bare year followed by a number: year(issue) format (JCAP/JHEP).
             // Treat year as journal_year, next number becomes volume.
-            TokenKind::Year if !volume_found && result.journal_volume.is_none()
-                && !token.text.starts_with('(')
-                && tokens.get(i + 1).is_some_and(|t| t.kind == TokenKind::Number) =>
+            TokenKind::Year
+                if !volume_found
+                    && result.journal_volume.is_none()
+                    && !token.text.starts_with('(')
+                    && tokens
+                        .get(i + 1)
+                        .is_some_and(|t| t.kind == TokenKind::Number) =>
             {
-                result.journal_year =
-                    token.normalized.clone().or(Some(token.text.clone()));
+                result.journal_year = token.normalized.clone().or(Some(token.text.clone()));
             }
             // Bare year as first numeration: treat as volume (JHEP "2006").
-            TokenKind::Year if !volume_found && result.journal_volume.is_none()
-                && !token.text.starts_with('(') =>
+            TokenKind::Year
+                if !volume_found
+                    && result.journal_volume.is_none()
+                    && !token.text.starts_with('(') =>
             {
                 let year_text = token.normalized.as_deref().unwrap_or(&token.text);
                 result.journal_volume = Some(year_text.to_string());
                 volume_found = true;
             }
             TokenKind::Year if result.journal_year.is_none() => {
-                result.journal_year =
-                    token.normalized.clone().or(Some(token.text.clone()));
+                result.journal_year = token.normalized.clone().or(Some(token.text.clone()));
             }
             TokenKind::PageRange if !volume_found && result.journal_volume.is_none() => {
-                let clean = token.text.trim_matches(|c: char| !c.is_ascii_alphanumeric() && c != '-' && c != '–');
+                let clean = token
+                    .text
+                    .trim_matches(|c: char| !c.is_ascii_alphanumeric() && c != '-' && c != '–');
                 result.journal_volume = Some(clean.to_string());
                 volume_found = true;
             }
             TokenKind::PageRange if result.journal_page.is_none() => {
-                let clean = token.text.trim_matches(|c: char| !c.is_ascii_alphanumeric() && c != '-' && c != '–');
+                let clean = token
+                    .text
+                    .trim_matches(|c: char| !c.is_ascii_alphanumeric() && c != '-' && c != '–');
                 result.journal_page = Some(clean.to_string());
             }
             TokenKind::Number if volume_found && result.journal_page.is_none() => {
@@ -195,15 +201,18 @@ fn extract_conference_volume(text: &str) -> Option<(String, Option<String>)> {
     // Check for conference:page compound (e.g., "LAT2006:022")
     if let Some((conf, page)) = clean.split_once(':') {
         let letter_count = conf.bytes().take_while(|b| b.is_ascii_uppercase()).count();
-        if letter_count >= 2 && conf.len() == letter_count + 4
+        if letter_count >= 2
+            && conf.len() == letter_count + 4
             && conf[letter_count..].chars().all(|c| c.is_ascii_digit())
-            && !page.is_empty() && page.chars().all(|c| c.is_ascii_digit())
+            && !page.is_empty()
+            && page.chars().all(|c| c.is_ascii_digit())
         {
             return Some((conf.to_string(), Some(page.to_string())));
         }
     }
     let letter_count = clean.bytes().take_while(|b| b.is_ascii_uppercase()).count();
-    if letter_count >= 2 && clean.len() == letter_count + 4
+    if letter_count >= 2
+        && clean.len() == letter_count + 4
         && clean[letter_count..].chars().all(|c| c.is_ascii_digit())
     {
         Some((clean.to_string(), None))
@@ -220,9 +229,7 @@ fn extract_old_style_volume(text: &str) -> Option<(String, char)> {
     if clean.len() >= 2 {
         let last = *clean.as_bytes().last().unwrap();
         if matches!(last, b'A' | b'B' | b'C' | b'D')
-            && clean[..clean.len() - 1]
-                .chars()
-                .all(|c| c.is_ascii_digit())
+            && clean[..clean.len() - 1].chars().all(|c| c.is_ascii_digit())
         {
             let volume = clean[..clean.len() - 1].to_string();
             return Some((volume, last as char));
@@ -348,7 +355,11 @@ fn extract_sub_references(
 
     let mut used_arxiv_positions: Vec<usize> = Vec::new();
     let mut sub_refs = extract_journal_sub_refs(
-        raw, tokens, primary, &journal_positions, &mut used_arxiv_positions,
+        raw,
+        tokens,
+        primary,
+        &journal_positions,
+        &mut used_arxiv_positions,
     );
 
     // Mark the primary's arXiv position as used
@@ -360,7 +371,10 @@ fn extract_sub_references(
     sub_refs.extend(extract_ibid_sub_refs(raw, tokens, primary));
 
     sub_refs.extend(extract_arxiv_only_sub_refs(
-        raw, tokens, primary, &used_arxiv_positions,
+        raw,
+        tokens,
+        primary,
+        &used_arxiv_positions,
     ));
     sub_refs
 }
@@ -510,11 +524,7 @@ fn find_token_in_range(
         .map(|t| t.text.clone())
 }
 
-fn arxiv_position_in_range(
-    tokens: &[Token],
-    start: usize,
-    end: usize,
-) -> Option<usize> {
+fn arxiv_position_in_range(tokens: &[Token], start: usize, end: usize) -> Option<usize> {
     tokens[start..end]
         .iter()
         .enumerate()

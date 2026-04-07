@@ -87,11 +87,7 @@ fn run_tesseract(tiff_bytes: &[u8]) -> Result<Vec<OcrWord>> {
 /// Convert OCR words (pixel coords) to PdfChar entries (PDF points).
 /// PDF coordinate system: origin at bottom-left, y increases upward.
 /// Tesseract: origin at top-left, y increases downward.
-fn words_to_chars(
-    words: &[OcrWord],
-    page_height_px: f32,
-    page_height_pt: f32,
-) -> Vec<PdfChar> {
+fn words_to_chars(words: &[OcrWord], page_height_px: f32, page_height_pt: f32) -> Vec<PdfChar> {
     let scale = page_height_pt / page_height_px;
     let mut chars = Vec::new();
 

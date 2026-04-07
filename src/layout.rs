@@ -61,7 +61,15 @@ struct WordAccum {
 
 impl WordAccum {
     fn new() -> Self {
-        Self { text: String::new(), x: 0.0, y: 0.0, max_x: 0.0, max_y: 0.0, font_size: 0.0, prev_right: 0.0 }
+        Self {
+            text: String::new(),
+            x: 0.0,
+            y: 0.0,
+            max_x: 0.0,
+            max_y: 0.0,
+            font_size: 0.0,
+            prev_right: 0.0,
+        }
     }
 
     fn start_char(&mut self, ch: &crate::types::PdfChar) {
@@ -134,9 +142,11 @@ fn group_words_into_lines(words: &[Word]) -> Vec<Line> {
     let mut lines: Vec<Line> = Vec::new();
 
     for word in words {
-        let merged = lines.iter_mut().rev().take(5).find(|line| {
-            (word.y - line.y).abs() < word.font_size * 0.5
-        });
+        let merged = lines
+            .iter_mut()
+            .rev()
+            .take(5)
+            .find(|line| (word.y - line.y).abs() < word.font_size * 0.5);
 
         if let Some(line) = merged {
             line.words.push(word.clone());
@@ -214,11 +224,7 @@ fn detect_column_boundary(lines: &[Line], page_width: f32) -> Option<f32> {
     find_gap_in_coverage(&coverage, bucket_width, lines.len())
 }
 
-fn find_gap_in_coverage(
-    coverage: &[u32],
-    bucket_width: f32,
-    num_lines: usize,
-) -> Option<f32> {
+fn find_gap_in_coverage(coverage: &[u32], bucket_width: f32, num_lines: usize) -> Option<f32> {
     let n_buckets = coverage.len();
     // Look for empty/sparse gap in the middle 30-70% of the page
     let search_start = n_buckets * 30 / 100;
@@ -273,8 +279,18 @@ fn partition_words(words: &[Word], boundary: f32) -> (Vec<Word>, Vec<Word>) {
 
 fn make_line(words: Vec<Word>, y: f32, font_size: f32) -> Line {
     let x_start = words.iter().map(|w| w.x).reduce(f32::min).unwrap();
-    let x_end = words.iter().map(|w| w.x + w.width).reduce(f32::max).unwrap();
-    Line { words, y, x_start, x_end, font_size }
+    let x_end = words
+        .iter()
+        .map(|w| w.x + w.width)
+        .reduce(f32::max)
+        .unwrap();
+    Line {
+        words,
+        y,
+        x_start,
+        x_end,
+        font_size,
+    }
 }
 
 fn group_lines_into_blocks(lines: &[Line]) -> Vec<Block> {
@@ -284,8 +300,7 @@ fn group_lines_into_blocks(lines: &[Line]) -> Vec<Block> {
         let should_merge = blocks.last().is_some_and(|block: &Block| {
             let prev_line = block.lines.last().unwrap();
             let gap = (prev_line.y - line.y).abs();
-            let x_overlap = line.x_start < prev_line.x_end
-                && line.x_end > prev_line.x_start;
+            let x_overlap = line.x_start < prev_line.x_end && line.x_end > prev_line.x_start;
             gap < line.font_size * 1.5 && x_overlap
         });
 
@@ -308,8 +323,18 @@ fn group_lines_into_blocks(lines: &[Line]) -> Vec<Block> {
 }
 
 fn update_block_bounds(block: &mut Block) {
-    let min_x = block.lines.iter().map(|l| l.x_start).reduce(f32::min).unwrap();
-    let max_x = block.lines.iter().map(|l| l.x_end).reduce(f32::max).unwrap();
+    let min_x = block
+        .lines
+        .iter()
+        .map(|l| l.x_start)
+        .reduce(f32::min)
+        .unwrap();
+    let max_x = block
+        .lines
+        .iter()
+        .map(|l| l.x_end)
+        .reduce(f32::max)
+        .unwrap();
     let max_y = block.lines.iter().map(|l| l.y).reduce(f32::max).unwrap();
     let min_y = block.lines.iter().map(|l| l.y).reduce(f32::min).unwrap();
     block.x = min_x;
