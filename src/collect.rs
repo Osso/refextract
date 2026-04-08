@@ -226,7 +226,11 @@ fn assess_subsequent_page(page_blocks: &[ZonedBlock], use_markers: bool) -> Page
         citation_lines >= 3 && total_lines > 0 && citation_lines * 2 >= total_lines
     };
 
-    PageAssessment { blocks, has_refs, saw_heading }
+    PageAssessment {
+        blocks,
+        has_refs,
+        saw_heading,
+    }
 }
 
 fn gather_subsequent_pages(

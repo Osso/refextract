@@ -181,7 +181,10 @@ fn assess_trailing_page(page_blocks: &[ZonedBlock], found_so_far: bool) -> Trail
         citation_lines >= 3 && total_lines > 0 && citation_lines * 2 >= total_lines;
     let has_refs = has_markers || (found_so_far && has_citation_density);
 
-    TrailingPageResult { blocks: collected, has_refs }
+    TrailingPageResult {
+        blocks: collected,
+        has_refs,
+    }
 }
 
 /// Scan backwards from the end of the document for blocks with markers.

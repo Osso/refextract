@@ -507,7 +507,9 @@ fn is_ibid_word(s: &str) -> bool {
 }
 
 fn try_year(clean: &str, word: &str, tokens: &mut Vec<Token>) -> bool {
-    let Some(caps) = YEAR_RE.captures(clean) else { return false };
+    let Some(caps) = YEAR_RE.captures(clean) else {
+        return false;
+    };
     let year: u32 = caps[1].parse().unwrap_or(0);
     if !(1900..=2030).contains(&year) {
         return false;
@@ -527,22 +529,38 @@ fn classify_word(word: &str, tokens: &mut Vec<Token>) {
         return;
     }
     if is_ibid_word(clean) {
-        tokens.push(Token { kind: TokenKind::Ibid, text: word.to_string(), normalized: None });
+        tokens.push(Token {
+            kind: TokenKind::Ibid,
+            text: word.to_string(),
+            normalized: None,
+        });
         return;
     }
     if is_punctuation(word) {
-        tokens.push(Token { kind: TokenKind::Punctuation, text: word.to_string(), normalized: None });
+        tokens.push(Token {
+            kind: TokenKind::Punctuation,
+            text: word.to_string(),
+            normalized: None,
+        });
         return;
     }
     if try_year(clean, word, tokens) {
         return;
     }
     if PAGE_RANGE_RE.is_match(clean) {
-        tokens.push(Token { kind: TokenKind::PageRange, text: word.to_string(), normalized: None });
+        tokens.push(Token {
+            kind: TokenKind::PageRange,
+            text: word.to_string(),
+            normalized: None,
+        });
         return;
     }
     if NUMBER_RE.is_match(clean) && clean.chars().all(|c| c.is_ascii_digit()) {
-        tokens.push(Token { kind: TokenKind::Number, text: word.to_string(), normalized: None });
+        tokens.push(Token {
+            kind: TokenKind::Number,
+            text: word.to_string(),
+            normalized: None,
+        });
         return;
     }
     if let Some(collab) = kb::match_collaboration(clean) {
@@ -553,7 +571,11 @@ fn classify_word(word: &str, tokens: &mut Vec<Token>) {
         });
         return;
     }
-    tokens.push(Token { kind: TokenKind::Word, text: word.to_string(), normalized: None });
+    tokens.push(Token {
+        kind: TokenKind::Word,
+        text: word.to_string(),
+        normalized: None,
+    });
 }
 
 fn push_number(tokens: &mut Vec<Token>, num: &str) {
