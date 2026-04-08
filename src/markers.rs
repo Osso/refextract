@@ -150,6 +150,40 @@ fn is_dense_ref_block(block: &crate::types::Block) -> bool {
     // 60% threshold: cite_lines / total >= 3/5
 }
 
+struct TrailingPageResult {
+    blocks: Vec<(String, usize)>,
+    has_refs: bool,
+}
+
+fn assess_trailing_page(page_blocks: &[ZonedBlock], found_so_far: bool) -> TrailingPageResult {
+    let mut collected = Vec::new();
+    let mut has_markers = false;
+    let mut citation_lines = 0;
+    let mut total_lines = 0;
+
+    for zb in page_blocks {
+        if zb.zone == ZoneKind::Header || zb.zone == ZoneKind::PageNumber {
+            continue;
+        }
+        if has_any_marker(&zb.block) {
+            has_markers = true;
+        }
+        for line in &zb.block.lines {
+            total_lines += 1;
+            if has_citation_content(&line.text()) {
+                citation_lines += 1;
+            }
+        }
+        collected.push((zb.block.text(), zb.page_num));
+    }
+
+    let has_citation_density =
+        citation_lines >= 3 && total_lines > 0 && citation_lines * 2 >= total_lines;
+    let has_refs = has_markers || (found_so_far && has_citation_density);
+
+    TrailingPageResult { blocks: collected, has_refs }
+}
+
 /// Scan backwards from the end of the document for blocks with markers.
 /// Requires 5+ total markers to avoid false positives from numbered lists.
 /// Also uses citation content density to fill gaps between marker pages
@@ -159,33 +193,9 @@ fn collect_trailing_marker_blocks(zoned_pages: &[Vec<ZonedBlock>]) -> Vec<(Strin
     let mut pages_without_refs = 0;
 
     for page_blocks in zoned_pages.iter().rev() {
-        let mut page_has_markers = false;
-        let mut page_citation_lines = 0;
-        let mut page_total_lines = 0;
-        let mut page_blocks_collected = Vec::new();
-        for zb in page_blocks {
-            if zb.zone == ZoneKind::Header || zb.zone == ZoneKind::PageNumber {
-                continue;
-            }
-            if has_any_marker(&zb.block) {
-                page_has_markers = true;
-            }
-            for line in &zb.block.lines {
-                page_total_lines += 1;
-                if has_citation_content(&line.text()) {
-                    page_citation_lines += 1;
-                }
-            }
-            page_blocks_collected.push((zb.block.text(), zb.page_num));
-        }
-        // A page has refs if it has markers, OR if it has high citation
-        // density and we've already found some ref pages (gap-filling).
-        let has_citation_density = page_citation_lines >= 3
-            && page_total_lines > 0
-            && page_citation_lines * 2 >= page_total_lines;
-        let page_has_refs = page_has_markers || (!blocks.is_empty() && has_citation_density);
-        if page_has_refs {
-            blocks.extend(page_blocks_collected);
+        let page = assess_trailing_page(page_blocks, !blocks.is_empty());
+        if page.has_refs {
+            blocks.extend(page.blocks);
             pages_without_refs = 0;
         } else {
             pages_without_refs += 1;
@@ -447,25 +457,27 @@ fn split_author_date_text(text: &str) -> Vec<String> {
 }
 
 fn find_author_split_positions(text: &str) -> Vec<usize> {
+    let mut seen = std::collections::HashSet::new();
     let mut positions: Vec<usize> = Vec::new();
 
     for m in AUTHOR_START_RE.find_iter(text) {
         if let Some(pos) = validate_split_position(text, m.start()) {
-            positions.push(pos);
+            if seen.insert(pos) {
+                positions.push(pos);
+            }
         }
     }
 
     for m in AUTHOR_START_NOCOMMA_RE.find_iter(text) {
         if let Some(pos) = validate_split_position(text, m.start())
-            && !positions.contains(&pos)
+            && seen.insert(pos)
         {
             positions.push(pos);
         }
     }
 
-    // Bibliography labels: "Surname et al. YYYY:" or "Surname and Foo YYYY:"
     for pos in find_biblio_label_positions(text) {
-        if !positions.contains(&pos) {
+        if seen.insert(pos) {
             positions.push(pos);
         }
     }

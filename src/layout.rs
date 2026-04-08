@@ -94,7 +94,6 @@ impl WordAccum {
             x: self.x,
             y: self.y,
             width: self.max_x - self.x,
-            height: self.max_y - self.y,
             font_size: self.font_size,
             is_superscript: is_superscript(self.font_size, dominant_font_size),
         });

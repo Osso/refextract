@@ -180,7 +180,6 @@ pub static REPORT_NUMBER_TRIE: Lazy<ReportNumberTrie> =
     Lazy::new(|| build_report_trie(REPORT_NUMBERS_KB));
 
 // Force recompilation when KB files change (hash set by build.rs).
-#[allow(dead_code)]
 const _KB_HASH: &str = env!("KB_HASH");
 
 static JOURNAL_TITLES_KB: &str = include_str!("../kbs/journal-titles.kb");
@@ -264,7 +263,6 @@ pub static COLLABORATIONS: Lazy<HashMap<String, String>> = Lazy::new(|| {
 });
 
 /// A report number pattern: institute prefix + compiled regex for numeration.
-#[allow(dead_code)]
 pub struct ReportNumberPattern {
     pub prefix: String,
     pub standardized: String,
@@ -272,11 +270,9 @@ pub struct ReportNumberPattern {
 }
 
 /// Compiled report number patterns (kept for reference; replaced by REPORT_NUMBER_TRIE).
-#[allow(dead_code)]
 pub static REPORT_NUMBERS: Lazy<Vec<ReportNumberPattern>> =
     Lazy::new(|| parse_report_numbers(REPORT_NUMBERS_KB));
 
-#[allow(dead_code)]
 fn parse_report_numbers(kb_text: &str) -> Vec<ReportNumberPattern> {
     let mut patterns = Vec::new();
     let mut current_numerations: Vec<String> = Vec::new();
@@ -305,7 +301,6 @@ fn parse_report_numbers(kb_text: &str) -> Vec<ReportNumberPattern> {
     patterns
 }
 
-#[allow(dead_code)]
 fn add_prefix_patterns(
     patterns: &mut Vec<ReportNumberPattern>,
     prefix: &str,

@@ -184,6 +184,51 @@ fn collect_lines_after(zb: &ZonedBlock, heading_line_idx: usize) -> String {
         .join(" ")
 }
 
+struct PageAssessment {
+    blocks: Vec<(String, usize)>,
+    has_refs: bool,
+    saw_heading: bool,
+}
+
+fn assess_subsequent_page(page_blocks: &[ZonedBlock], use_markers: bool) -> PageAssessment {
+    let mut blocks = Vec::new();
+    let mut citation_lines = 0;
+    let mut total_lines = 0;
+    let mut has_markers = false;
+    let mut saw_heading = false;
+
+    for zb in page_blocks {
+        if zb.zone == ZoneKind::Header || zb.zone == ZoneKind::PageNumber {
+            continue;
+        }
+        if is_standalone_ref_heading(&zb.block) {
+            saw_heading = true;
+            continue;
+        }
+        if use_markers {
+            if has_any_marker(&zb.block) {
+                has_markers = true;
+            }
+        } else {
+            for line in &zb.block.lines {
+                total_lines += 1;
+                if has_citation_content(&line.text()) {
+                    citation_lines += 1;
+                }
+            }
+        }
+        blocks.push((zb.block.text(), zb.page_num));
+    }
+
+    let has_refs = if use_markers {
+        has_markers
+    } else {
+        citation_lines >= 3 && total_lines > 0 && citation_lines * 2 >= total_lines
+    };
+
+    PageAssessment { blocks, has_refs, saw_heading }
+}
+
 fn gather_subsequent_pages(
     zoned_pages: &[Vec<ZonedBlock>],
     start_page: usize,
@@ -192,59 +237,21 @@ fn gather_subsequent_pages(
 ) {
     let mut pages_without_refs = 0;
     for page_blocks in &zoned_pages[start_page + 1..] {
-        let mut page_has_refs = false;
-        let mut page_blocks_buf = Vec::new();
-        let mut page_citation_lines = 0;
-        let mut page_total_lines = 0;
-        let mut saw_heading = false;
-        for zb in page_blocks {
-            if zb.zone == ZoneKind::Header || zb.zone == ZoneKind::PageNumber {
-                continue;
-            }
-            if is_standalone_ref_heading(&zb.block) {
-                // Don't stop immediately — the heading might be a running
-                // header (e.g., "References" at top of an appendix page).
-                // Only stop if the page also has reference content.
-                saw_heading = true;
-                continue;
-            }
-            if use_markers {
-                if has_any_marker(&zb.block) {
-                    page_has_refs = true;
-                }
-            } else {
-                for line in &zb.block.lines {
-                    page_total_lines += 1;
-                    if has_citation_content(&line.text()) {
-                        page_citation_lines += 1;
-                    }
-                }
-            }
-            page_blocks_buf.push((zb.block.text(), zb.page_num));
-        }
-        if !use_markers
-            && page_citation_lines >= 3
-            && page_total_lines > 0
-            && page_citation_lines * 2 >= page_total_lines
-        {
-            page_has_refs = true;
-        }
-        // A standalone heading on a page WITH ref content means a real
-        // second ref section — stop before it (multi-chapter documents).
-        // A heading on a page WITHOUT ref content is a running header — skip it.
-        if saw_heading && page_has_refs {
-            ref_blocks.extend(page_blocks_buf);
+        let page = assess_subsequent_page(page_blocks, use_markers);
+
+        if page.saw_heading && page.has_refs {
+            ref_blocks.extend(page.blocks);
             return;
         }
-        if page_has_refs {
-            ref_blocks.extend(page_blocks_buf);
+        if page.has_refs {
+            ref_blocks.extend(page.blocks);
             pages_without_refs = 0;
         } else {
             pages_without_refs += 1;
             if pages_without_refs >= 2 {
                 return;
             }
-            ref_blocks.extend(page_blocks_buf);
+            ref_blocks.extend(page.blocks);
         }
     }
 }

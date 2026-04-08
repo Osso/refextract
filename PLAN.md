@@ -260,3 +260,10 @@ Per-paper timing (1303.4571, 104 pages):
 - Metadata: `tests/fixtures/metadata/` (INSPIRE JSON ground truth)
 - Results: `tests/fixtures/results/` (cached refextract output)
 - Download: `scripts/download-papers.sh` via nohup
+- [ ] Refactor `src/markers.rs`: collect_trailing_marker_blocks (line 158): 39 body lines (max 30) — extract into helper functions
+- [ ] Refactor `src/markers.rs`: split_into_references (line 330): 39 body lines (max 30) — extract into helper functions
+- [ ] Refactor `src/markers.rs`: find_label_start (line 499): 33 body lines (max 30) — extract into helper functions
+- [ ] Refactor `src/kb.rs`: try_emit_dsl_token (line 408): 31 body lines (max 30) — extract into helper functions
+- [ ] Refactor `src/collect.rs`: find_all_reference_headings (line 51): nesting depth 5 (max 4) — extract into helper functions
+- [ ] Refactor `src/parse.rs`: assign_numeration (line 154): 31 body lines (max 30) — extract into helper functions
+- [ ] Refactor `src/tokenizer.rs`: try_compound_numeration (line 447): 33 body lines (max 30) — extract into helper functions

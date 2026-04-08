@@ -9,7 +9,6 @@ pub struct PdfChar {
     pub width: f32,
     pub height: f32,
     pub font_size: f32,
-    #[allow(dead_code)]
     pub font_name: String,
 }
 
@@ -29,8 +28,6 @@ pub struct Word {
     pub x: f32,
     pub y: f32,
     pub width: f32,
-    #[allow(dead_code)]
-    pub height: f32,
     pub font_size: f32,
     pub is_superscript: bool,
 }
@@ -83,10 +80,6 @@ pub enum ZoneKind {
     PageNumber,
     Body,
     Footnote,
-    #[allow(dead_code)]
-    ReferenceHeading,
-    #[allow(dead_code)]
-    ReferenceBody,
 }
 
 /// A block with its zone classification.

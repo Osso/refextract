@@ -127,6 +127,30 @@ fn try_word_as_volume(token: &Token, result: &mut ParsedReference) -> bool {
     false
 }
 
+fn assign_year_token(
+    token: &Token,
+    next: Option<&Token>,
+    volume_found: &mut bool,
+    result: &mut ParsedReference,
+) {
+    let is_bare = !token.text.starts_with('(');
+    let next_is_number = next.is_some_and(|t| t.kind == TokenKind::Number);
+
+    if !*volume_found && result.journal_volume.is_none() && is_bare && next_is_number {
+        result.journal_year = token.normalized.clone().or(Some(token.text.clone()));
+        return;
+    }
+    if !*volume_found && result.journal_volume.is_none() && is_bare {
+        let year_text = token.normalized.as_deref().unwrap_or(&token.text);
+        result.journal_volume = Some(year_text.to_string());
+        *volume_found = true;
+        return;
+    }
+    if result.journal_year.is_none() {
+        result.journal_year = token.normalized.clone().or(Some(token.text.clone()));
+    }
+}
+
 fn assign_numeration(window: &[Token], result: &mut ParsedReference) {
     let mut volume_found = false;
     let tokens: Vec<&Token> = window.iter().take(8).collect();
@@ -137,30 +161,8 @@ fn assign_numeration(window: &[Token], result: &mut ParsedReference) {
                 result.journal_volume = Some(clean.to_string());
                 volume_found = true;
             }
-            // Bare year followed by a number: year(issue) format (JCAP/JHEP).
-            // Treat year as journal_year, next number becomes volume.
-            TokenKind::Year
-                if !volume_found
-                    && result.journal_volume.is_none()
-                    && !token.text.starts_with('(')
-                    && tokens
-                        .get(i + 1)
-                        .is_some_and(|t| t.kind == TokenKind::Number) =>
-            {
-                result.journal_year = token.normalized.clone().or(Some(token.text.clone()));
-            }
-            // Bare year as first numeration: treat as volume (JHEP "2006").
-            TokenKind::Year
-                if !volume_found
-                    && result.journal_volume.is_none()
-                    && !token.text.starts_with('(') =>
-            {
-                let year_text = token.normalized.as_deref().unwrap_or(&token.text);
-                result.journal_volume = Some(year_text.to_string());
-                volume_found = true;
-            }
-            TokenKind::Year if result.journal_year.is_none() => {
-                result.journal_year = token.normalized.clone().or(Some(token.text.clone()));
+            TokenKind::Year => {
+                assign_year_token(token, tokens.get(i + 1).copied(), &mut volume_found, result);
             }
             TokenKind::PageRange if !volume_found && result.journal_volume.is_none() => {
                 let clean = token
