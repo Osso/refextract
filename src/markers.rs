@@ -464,10 +464,10 @@ fn find_author_split_positions(text: &str) -> Vec<usize> {
     let mut positions: Vec<usize> = Vec::new();
 
     for m in AUTHOR_START_RE.find_iter(text) {
-        if let Some(pos) = validate_split_position(text, m.start()) {
-            if seen.insert(pos) {
-                positions.push(pos);
-            }
+        if let Some(pos) = validate_split_position(text, m.start())
+            && seen.insert(pos)
+        {
+            positions.push(pos);
         }
     }
 

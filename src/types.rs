@@ -9,7 +9,6 @@ pub struct PdfChar {
     pub width: f32,
     pub height: f32,
     pub font_size: f32,
-    pub font_name: String,
 }
 
 /// All characters on a single PDF page.

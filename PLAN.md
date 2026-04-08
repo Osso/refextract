@@ -267,3 +267,4 @@ Per-paper timing (1303.4571, 104 pages):
 - [ ] Refactor `src/collect.rs`: find_all_reference_headings (line 51): nesting depth 5 (max 4) — extract into helper functions
 - [ ] Refactor `src/parse.rs`: assign_numeration (line 154): 31 body lines (max 30) — extract into helper functions
 - [ ] Refactor `src/tokenizer.rs`: try_compound_numeration (line 447): 33 body lines (max 30) — extract into helper functions
+- [ ] Refactor `src/ocr.rs`: words_to_chars (line 90): 32 body lines (max 30) — extract into helper functions

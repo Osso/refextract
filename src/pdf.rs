@@ -77,7 +77,6 @@ fn convert_text_char(ch: &PdfPageTextChar) -> Option<PdfChar> {
         width,
         height,
         font_size,
-        font_name: ch.font_name(),
     })
 }
 

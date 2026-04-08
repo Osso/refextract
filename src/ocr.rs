@@ -115,7 +115,6 @@ fn words_to_chars(words: &[OcrWord], page_height_px: f32, page_height_pt: f32) -
                 width: w_pt,
                 height: h_pt,
                 font_size,
-                font_name: "OCR".to_string(),
             });
         }
 
@@ -128,7 +127,6 @@ fn words_to_chars(words: &[OcrWord], page_height_px: f32, page_height_pt: f32) -
             width: char_w_px * scale,
             height: h_pt,
             font_size,
-            font_name: "OCR".to_string(),
         });
     }
 

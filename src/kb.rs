@@ -262,68 +262,6 @@ pub static COLLABORATIONS: Lazy<HashMap<String, String>> = Lazy::new(|| {
         .collect()
 });
 
-/// A report number pattern: institute prefix + compiled regex for numeration.
-pub struct ReportNumberPattern {
-    pub prefix: String,
-    pub standardized: String,
-    pub numeration_re: Regex,
-}
-
-/// Compiled report number patterns (kept for reference; replaced by REPORT_NUMBER_TRIE).
-pub static REPORT_NUMBERS: Lazy<Vec<ReportNumberPattern>> =
-    Lazy::new(|| parse_report_numbers(REPORT_NUMBERS_KB));
-
-fn parse_report_numbers(kb_text: &str) -> Vec<ReportNumberPattern> {
-    let mut patterns = Vec::new();
-    let mut current_numerations: Vec<String> = Vec::new();
-
-    for line in kb_text.lines() {
-        let line = line.trim();
-        if line.is_empty() || line.starts_with('#') || line.starts_with("*****") {
-            continue;
-        }
-        if line.starts_with('<') && line.ends_with('>') {
-            let inner = &line[1..line.len() - 1];
-            if let Some(regex_str) = numeration_to_regex(inner) {
-                current_numerations.push(regex_str);
-            }
-            continue;
-        }
-        if let Some((prefix, standardized)) = line.split_once("---") {
-            add_prefix_patterns(
-                &mut patterns,
-                prefix.trim(),
-                standardized.trim(),
-                &current_numerations,
-            );
-        }
-    }
-    patterns
-}
-
-fn add_prefix_patterns(
-    patterns: &mut Vec<ReportNumberPattern>,
-    prefix: &str,
-    standardized: &str,
-    numerations: &[String],
-) {
-    if numerations.is_empty() {
-        return;
-    }
-    let escaped = regex::escape(&prefix.replace('\t', " ").replace("  ", " "));
-    let flex_prefix = escaped.replace(r"\ ", r"[\s\-/]+");
-    // Combine all numerations into a single regex with alternation
-    let num_alt = numerations.join("|");
-    let full_pattern = format!(r"(?i)\b{flex_prefix}[\s\-/]*(?:{num_alt})");
-    if let Ok(re) = Regex::new(&full_pattern) {
-        patterns.push(ReportNumberPattern {
-            prefix: prefix.to_string(),
-            standardized: standardized.to_string(),
-            numeration_re: re,
-        });
-    }
-}
-
 /// Convert the KB numeration DSL to a regex string.
 ///
 /// DSL: `9`→`\d`, `9?`→`\d?`, `s`→separator, `yyyy`→year,

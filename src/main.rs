@@ -74,11 +74,7 @@ fn main() -> Result<()> {
     let batch = cli.files.len() > 1;
 
     // Force KB initialization upfront (amortize ~500ms regex compilation).
-    let _ = (
-        &*kb::JOURNAL_TITLES,
-        &*kb::JOURNAL_ABBREVS,
-        &*kb::REPORT_NUMBERS,
-    );
+    let _ = (&*kb::JOURNAL_TITLES, &*kb::JOURNAL_ABBREVS);
 
     let doi_cache = if !cli.no_doi_lookup {
         Some(doi::DoiCache::open()?)
