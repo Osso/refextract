@@ -100,35 +100,72 @@ fn words_to_chars(words: &[OcrWord], page_height_px: f32, page_height_pt: f32) -
         let h_pt = word.h as f32 * scale;
         let font_size = h_pt; // approximate
 
-        for (i, ch) in word.text.chars().enumerate() {
-            let px_x = word.x as f32 + i as f32 * char_w_px;
-            let px_y = word.y as f32;
-            let x_pt = px_x * scale;
-            // Flip y: PDF origin is bottom-left
-            let y_pt = page_height_pt - (px_y + word.h as f32) * scale;
-            let w_pt = char_w_px * scale;
+        push_word_chars(
+            word,
+            &mut chars,
+            scale,
+            page_height_pt,
+            char_w_px,
+            h_pt,
+            font_size,
+        );
+        push_trailing_space(
+            word,
+            &mut chars,
+            scale,
+            page_height_pt,
+            char_w_px,
+            h_pt,
+            font_size,
+        );
+    }
 
-            chars.push(PdfChar {
-                ch,
-                x: x_pt,
-                y: y_pt,
-                width: w_pt,
-                height: h_pt,
-                font_size,
-            });
-        }
+    chars
+}
 
-        // Add space after each word
-        let last_x_px = word.x as f32 + word.w as f32;
+fn push_word_chars(
+    word: &OcrWord,
+    chars: &mut Vec<PdfChar>,
+    scale: f32,
+    page_height_pt: f32,
+    char_w_px: f32,
+    h_pt: f32,
+    font_size: f32,
+) {
+    for (i, ch) in word.text.chars().enumerate() {
+        let px_x = word.x as f32 + i as f32 * char_w_px;
+        let px_y = word.y as f32;
+        let x_pt = px_x * scale;
+        let y_pt = page_height_pt - (px_y + word.h as f32) * scale;
+        let w_pt = char_w_px * scale;
+
         chars.push(PdfChar {
-            ch: ' ',
-            x: last_x_px * scale,
-            y: page_height_pt - (word.y as f32 + word.h as f32) * scale,
-            width: char_w_px * scale,
+            ch,
+            x: x_pt,
+            y: y_pt,
+            width: w_pt,
             height: h_pt,
             font_size,
         });
     }
+}
 
-    chars
+fn push_trailing_space(
+    word: &OcrWord,
+    chars: &mut Vec<PdfChar>,
+    scale: f32,
+    page_height_pt: f32,
+    char_w_px: f32,
+    h_pt: f32,
+    font_size: f32,
+) {
+    let last_x_px = word.x as f32 + word.w as f32;
+    chars.push(PdfChar {
+        ch: ' ',
+        x: last_x_px * scale,
+        y: page_height_pt - (word.y as f32 + word.h as f32) * scale,
+        width: char_w_px * scale,
+        height: h_pt,
+        font_size,
+    });
 }

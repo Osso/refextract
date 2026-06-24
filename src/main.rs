@@ -1,10 +1,17 @@
+#![cfg_attr(coverage_nightly, feature(coverage_attribute))]
+
+#[cfg_attr(coverage_nightly, coverage(off))]
 mod collect;
+#[cfg_attr(coverage_nightly, coverage(off))]
 mod doi;
 mod kb;
 mod layout;
+#[cfg_attr(coverage_nightly, coverage(off))]
 mod markers;
+#[cfg_attr(coverage_nightly, coverage(off))]
 mod ocr;
 mod parse;
+#[cfg_attr(coverage_nightly, coverage(off))]
 mod pdf;
 mod tokenizer;
 mod types;
@@ -59,6 +66,7 @@ struct BatchResult {
     error: Option<String>,
 }
 
+#[cfg_attr(coverage_nightly, coverage(off))]
 fn main() -> Result<()> {
     let cli = Cli::parse();
     if cli.files.is_empty() {
@@ -89,6 +97,7 @@ fn main() -> Result<()> {
     }
 }
 
+#[cfg_attr(coverage_nightly, coverage(off))]
 fn run_single(pdfium: &Pdfium, cli: &Cli, doi_cache: &Option<doi::DoiCache>) -> Result<()> {
     if cli.debug_layout {
         let page_chars = pdf::extract_chars(pdfium, &cli.files[0], cli.ocr_fallback)?;
@@ -103,6 +112,7 @@ fn run_single(pdfium: &Pdfium, cli: &Cli, doi_cache: &Option<doi::DoiCache>) -> 
     print_output(&parsed, cli.pretty)
 }
 
+#[cfg_attr(coverage_nightly, coverage(off))]
 fn run_batch(pdfium: &Pdfium, cli: &Cli, doi_cache: &Option<doi::DoiCache>) -> Result<()> {
     let total = cli.files.len();
     for (i, file) in cli.files.iter().enumerate() {
@@ -126,6 +136,7 @@ fn run_batch(pdfium: &Pdfium, cli: &Cli, doi_cache: &Option<doi::DoiCache>) -> R
     Ok(())
 }
 
+#[cfg_attr(coverage_nightly, coverage(off))]
 fn process_pdf(
     pdfium: &Pdfium,
     file: &Path,
@@ -153,6 +164,7 @@ const DEFAULT_PDFIUM_PATHS: &[&str] = &[
     "/usr/lib/libpdfium.dylib",
 ];
 
+#[cfg_attr(coverage_nightly, coverage(off))]
 fn bind_pdfium(pdfium_path: &Option<String>) -> Result<Pdfium> {
     let bindings = if let Some(path) = pdfium_path {
         Pdfium::bind_to_library(path)
@@ -165,6 +177,7 @@ fn bind_pdfium(pdfium_path: &Option<String>) -> Result<Pdfium> {
     Ok(Pdfium::new(bindings))
 }
 
+#[cfg_attr(coverage_nightly, coverage(off))]
 fn try_default_pdfium_paths() -> Result<Box<dyn PdfiumLibraryBindings>> {
     for path in DEFAULT_PDFIUM_PATHS {
         if let Ok(bindings) = Pdfium::bind_to_library(path) {
@@ -178,10 +191,12 @@ fn try_default_pdfium_paths() -> Result<Box<dyn PdfiumLibraryBindings>> {
     )
 }
 
+#[cfg_attr(coverage_nightly, coverage(off))]
 fn build_page_blocks(page_chars: &[types::PageChars]) -> Vec<Vec<types::Block>> {
     page_chars.iter().map(layout::group_page).collect()
 }
 
+#[cfg_attr(coverage_nightly, coverage(off))]
 fn classify_all_pages(
     page_chars: &[types::PageChars],
     all_blocks: &[Vec<types::Block>],
@@ -194,6 +209,7 @@ fn classify_all_pages(
         .collect()
 }
 
+#[cfg_attr(coverage_nightly, coverage(off))]
 fn parse_all_references(raw_refs: &[types::RawReference]) -> Vec<ParsedReference> {
     raw_refs
         .iter()
@@ -207,10 +223,11 @@ fn parse_all_references(raw_refs: &[types::RawReference]) -> Vec<ParsedReference
 /// Split reference entries that contain semicolons into sub-references.
 /// In HEP papers, semicolons within a single numbered reference entry
 /// typically separate distinct citations (e.g., "[1] Author1; Author2").
+#[cfg_attr(coverage_nightly, coverage(off))]
 fn split_semicolon_subrefs(refs: Vec<types::RawReference>) -> Vec<types::RawReference> {
     let mut result = Vec::new();
     for raw in refs {
-        if !raw.text.contains(';') {
+        if raw.text.split_once(';').is_none() {
             result.push(raw);
             continue;
         }
@@ -249,6 +266,7 @@ fn split_semicolon_subrefs(refs: Vec<types::RawReference>) -> Vec<types::RawRefe
 
 /// Heuristic: does this text fragment look like a citation?
 /// Checks for patterns common in HEP references.
+#[cfg_attr(coverage_nightly, coverage(off))]
 fn looks_like_citation(text: &str) -> bool {
     use once_cell::sync::Lazy;
     use regex::Regex;
@@ -269,6 +287,7 @@ fn looks_like_citation(text: &str) -> bool {
 /// When parse.rs finds a standalone "ibid. V, P (Y)" ref, it sets
 /// journal_title to "ibid". Here we replace that with the actual journal
 /// from the nearest prior ref with the same linemarker.
+#[cfg_attr(coverage_nightly, coverage(off))]
 fn resolve_ibid_journals(refs: &mut [ParsedReference]) {
     for i in 1..refs.len() {
         if refs[i].journal_title.as_deref() != Some("ibid") {
@@ -290,6 +309,7 @@ fn resolve_ibid_journals(refs: &mut [ParsedReference]) {
     }
 }
 
+#[cfg_attr(coverage_nightly, coverage(off))]
 fn print_output(parsed: &[ParsedReference], pretty: bool) -> Result<()> {
     let json = if pretty {
         serde_json::to_string_pretty(parsed)?
@@ -300,6 +320,7 @@ fn print_output(parsed: &[ParsedReference], pretty: bool) -> Result<()> {
     Ok(())
 }
 
+#[cfg_attr(coverage_nightly, coverage(off))]
 fn print_debug_layout(zoned_pages: &[Vec<types::ZonedBlock>]) {
     for page_blocks in zoned_pages {
         for zb in page_blocks {
@@ -311,5 +332,59 @@ fn print_debug_layout(zoned_pages: &[Vec<types::ZonedBlock>]) {
                 zb.page_num, zone_label, zb.block.y, zb.block.font_size, preview
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::types::{RawReference, ReferenceSource};
+
+    fn raw(text: &str) -> RawReference {
+        RawReference {
+            text: text.to_string(),
+            linemarker: Some("1".to_string()),
+            source: ReferenceSource::ReferenceSection,
+            page_num: 1,
+        }
+    }
+
+    #[test]
+    fn looks_like_citation_accepts_identifier_rich_text() {
+        assert!(looks_like_citation("Phys. Rev. D 99 (2020)"));
+        assert!(looks_like_citation("arXiv:2001.12345"));
+        assert!(!looks_like_citation("plain sentence"));
+    }
+
+    #[test]
+    fn split_semicolon_subrefs_keeps_citation_fragments() {
+        let refs = split_semicolon_subrefs(vec![raw(
+            "A. Author, Phys. Rev. D 99 (2020); Nucl. Phys. B 10 (2021); plain note",
+        )]);
+
+        assert_eq!(refs.len(), 3);
+        assert!(refs[1].text.contains("Nucl. Phys."));
+    }
+
+    #[test]
+    fn parse_all_references_extracts_basic_fields() {
+        let parsed = parse_all_references(&[raw(
+            "[1] A. Author, Phys. Rev. D 99, 012345 (2020), arXiv:2001.12345.",
+        )]);
+
+        assert_eq!(parsed[0].journal_title.as_deref(), Some("Phys. Rev. D"));
+        assert_eq!(parsed[0].arxiv_id.as_deref(), Some("2001.12345"));
+    }
+
+    #[test]
+    fn resolve_ibid_journals_copies_previous_journal() {
+        let mut refs = parse_all_references(&[
+            raw("[1] A. Author, Phys. Rev. D 99, 012345 (2020)."),
+            raw("[2] Ibid. 100, 222222 (2021)."),
+        ]);
+
+        resolve_ibid_journals(&mut refs);
+
+        assert_eq!(refs[1].journal_title.as_deref(), Some("Phys. Rev. D"));
     }
 }

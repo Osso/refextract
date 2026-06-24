@@ -155,43 +155,79 @@ fn assign_numeration(window: &[Token], result: &mut ParsedReference) {
     let mut volume_found = false;
     let tokens: Vec<&Token> = window.iter().take(8).collect();
     for (i, token) in tokens.iter().enumerate() {
-        match &token.kind {
-            TokenKind::Number if !volume_found && result.journal_volume.is_none() => {
-                let clean = token.text.trim_matches(|c: char| !c.is_ascii_digit());
-                result.journal_volume = Some(clean.to_string());
-                volume_found = true;
-            }
-            TokenKind::Year => {
-                assign_year_token(token, tokens.get(i + 1).copied(), &mut volume_found, result);
-            }
-            TokenKind::PageRange if !volume_found && result.journal_volume.is_none() => {
-                let clean = token
-                    .text
-                    .trim_matches(|c: char| !c.is_ascii_alphanumeric() && c != '-' && c != '–');
-                result.journal_volume = Some(clean.to_string());
-                volume_found = true;
-            }
-            TokenKind::PageRange if result.journal_page.is_none() => {
-                let clean = token
-                    .text
-                    .trim_matches(|c: char| !c.is_ascii_alphanumeric() && c != '-' && c != '–');
-                result.journal_page = Some(clean.to_string());
-            }
-            TokenKind::Number if volume_found && result.journal_page.is_none() => {
-                let clean = token.text.trim_matches(|c: char| !c.is_ascii_digit());
-                result.journal_page = Some(clean.to_string());
-            }
-            TokenKind::Word if !volume_found && result.journal_volume.is_none() => {
-                volume_found = try_word_as_volume(token, result);
-            }
-            TokenKind::Word if volume_found && result.journal_page.is_none() => {
-                if let Some(page) = extract_letter_prefixed_number(&token.text) {
-                    result.journal_page = Some(page);
-                }
-            }
-            TokenKind::JournalName | TokenKind::Doi | TokenKind::ArxivId => break,
-            _ => {}
+        if should_stop_numeration_scan(token) {
+            break;
         }
+        if token.kind == TokenKind::Year {
+            assign_year_token(token, tokens.get(i + 1).copied(), &mut volume_found, result);
+            continue;
+        }
+        if assign_volume_token(token, result, &mut volume_found) {
+            continue;
+        }
+        assign_page_token(token, result, volume_found);
+    }
+}
+
+fn should_stop_numeration_scan(token: &Token) -> bool {
+    matches!(
+        token.kind,
+        TokenKind::JournalName | TokenKind::Doi | TokenKind::ArxivId
+    )
+}
+
+fn assign_volume_token(
+    token: &Token,
+    result: &mut ParsedReference,
+    volume_found: &mut bool,
+) -> bool {
+    if *volume_found || result.journal_volume.is_some() {
+        return false;
+    }
+    match token.kind {
+        TokenKind::Number => {
+            let clean = token.text.trim_matches(|c: char| !c.is_ascii_digit());
+            result.journal_volume = Some(clean.to_string());
+            *volume_found = true;
+            true
+        }
+        TokenKind::PageRange => {
+            let clean = token
+                .text
+                .trim_matches(|c: char| !c.is_ascii_alphanumeric() && c != '-' && c != '–');
+            result.journal_volume = Some(clean.to_string());
+            *volume_found = true;
+            true
+        }
+        TokenKind::Word => {
+            *volume_found = try_word_as_volume(token, result);
+            *volume_found
+        }
+        _ => false,
+    }
+}
+
+fn assign_page_token(token: &Token, result: &mut ParsedReference, volume_found: bool) {
+    if result.journal_page.is_some() {
+        return;
+    }
+    match token.kind {
+        TokenKind::PageRange => {
+            let clean = token
+                .text
+                .trim_matches(|c: char| !c.is_ascii_alphanumeric() && c != '-' && c != '–');
+            result.journal_page = Some(clean.to_string());
+        }
+        TokenKind::Number if volume_found => {
+            let clean = token.text.trim_matches(|c: char| !c.is_ascii_digit());
+            result.journal_page = Some(clean.to_string());
+        }
+        TokenKind::Word if volume_found => {
+            if let Some(page) = extract_letter_prefixed_number(&token.text) {
+                result.journal_page = Some(page);
+            }
+        }
+        _ => {}
     }
 }
 
@@ -532,4 +568,139 @@ fn arxiv_position_in_range(tokens: &[Token], start: usize, end: usize) -> Option
         .enumerate()
         .find(|(_, t)| t.kind == TokenKind::ArxivId)
         .map(|(i, _)| start + i)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::tokenizer::tokenize;
+    use crate::types::ReferenceSource;
+
+    fn raw(text: &str) -> RawReference {
+        RawReference {
+            text: text.to_string(),
+            linemarker: Some("1".to_string()),
+            source: ReferenceSource::ReferenceSection,
+            page_num: 3,
+        }
+    }
+
+    fn parse(text: &str) -> ParsedReference {
+        let raw = raw(text);
+        let tokens = tokenize(text);
+        parse_references(&raw, &tokens).remove(0)
+    }
+
+    #[test]
+    fn parses_identifiers_and_journal_fields() {
+        let parsed = parse(
+            "[1] A. Author, Phys. Rev. D 99, 012345 (2020), doi:10.1103/PhysRevD.99.012345, arXiv:2001.12345.",
+        );
+
+        assert_eq!(parsed.linemarker.as_deref(), Some("1"));
+        assert_eq!(parsed.journal_title.as_deref(), Some("Phys. Rev. D"));
+        assert_eq!(parsed.journal_volume.as_deref(), Some("99"));
+        assert_eq!(parsed.journal_year.as_deref(), Some("2020"));
+        assert_eq!(parsed.doi.as_deref(), Some("10.1103/PhysRevD.99.012345"));
+        assert_eq!(parsed.arxiv_id.as_deref(), Some("2001.12345"));
+    }
+
+    #[test]
+    fn clears_journal_name_without_volume() {
+        let parsed = parse("[1] Computing methods and Science notes, arXiv:2001.12345.");
+
+        assert_eq!(parsed.journal_title, None);
+        assert_eq!(parsed.arxiv_id.as_deref(), Some("2001.12345"));
+    }
+
+    #[test]
+    fn creates_sub_references_for_multiple_journals() {
+        let raw =
+            raw("[1] A. Author, Phys. Rev. D 72, 052002 (2005); Phys. Rev. D 72, 052008 (2005).");
+        let tokens = tokenize(&raw.text);
+
+        let parsed = parse_references(&raw, &tokens);
+
+        assert!(parsed.len() >= 2);
+        assert!(
+            parsed
+                .iter()
+                .any(|r| r.journal_page.as_deref() == Some("052008"))
+        );
+    }
+
+    #[test]
+    fn parses_report_number_and_isbn() {
+        let parsed = parse("[1] CERN-TH-2020-001, ISBN 978-0-521-88068-8.");
+
+        assert!(parsed.report_number.is_some());
+        assert!(parsed.isbn.is_some());
+    }
+
+    #[test]
+    fn parses_url() {
+        let parsed = parse("[1] CMS Collaboration, https://example.org/paper.");
+
+        assert_eq!(parsed.url.as_deref(), Some("https://example.org/paper."));
+    }
+
+    #[test]
+    fn parses_old_arxiv_identifier() {
+        let parsed = parse("[1] A. Author, arXiv:hep-ph/0202089.");
+
+        assert_eq!(parsed.arxiv_id.as_deref(), Some("hep-ph/0202089"));
+    }
+
+    #[test]
+    fn parses_ibid_numeration_without_journal() {
+        let parsed = parse("[2] Ibid. 100, 222222 (2021).");
+
+        assert_eq!(parsed.journal_volume.as_deref(), Some("100"));
+        assert_eq!(parsed.journal_page.as_deref(), Some("222222"));
+        assert_eq!(parsed.journal_year.as_deref(), Some("2021"));
+    }
+
+    #[test]
+    fn creates_sub_references_for_extra_arxiv_ids() {
+        let raw = raw(
+            "[1] A. Author, Phys. Rev. D 72, 052002 (2005), arXiv:1111.22222, arXiv:3333.44444.",
+        );
+        let tokens = tokenize(&raw.text);
+
+        let parsed = parse_references(&raw, &tokens);
+
+        assert!(
+            parsed
+                .iter()
+                .any(|r| r.arxiv_id.as_deref() == Some("3333.44444"))
+        );
+    }
+
+    #[test]
+    fn parses_title_between_quotes() {
+        let parsed = parse("[1] A. Author, \"A quoted title\", Phys. Rev. D 10, 20 (1999).");
+
+        assert_eq!(parsed.title.as_deref(), Some("A quoted title"));
+        assert_eq!(parsed.authors.as_deref(), Some("A. Author"));
+    }
+
+    #[test]
+    fn parses_short_jhep_reference() {
+        let parsed = parse("[1] ATLAS Collaboration, JHEP 01, 001 (2020).");
+
+        assert_eq!(
+            parsed.journal_title.as_deref(),
+            Some("J. High Energy Phys.")
+        );
+        assert_eq!(parsed.journal_volume.as_deref(), Some("01"));
+    }
+
+    #[test]
+    fn parses_page_range_as_volume_then_page() {
+        let parsed = parse("[1] A. Author, Phys. Lett. B 10, 20-30 (1980).");
+
+        assert_eq!(parsed.journal_volume.as_deref(), Some("10"));
+        assert_eq!(parsed.journal_page.as_deref(), Some("20-30"));
+        assert_eq!(parsed.journal_year.as_deref(), Some("1980"));
+    }
 }

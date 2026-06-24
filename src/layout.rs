@@ -341,3 +341,54 @@ fn update_block_bounds(block: &mut Block) {
     block.width = max_x - min_x;
     block.height = max_y - min_y + block.font_size;
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::types::{PageChars, PdfChar};
+
+    fn ch(ch: char, x: f32, y: f32) -> PdfChar {
+        PdfChar {
+            ch,
+            x,
+            y,
+            width: 5.0,
+            height: 10.0,
+            font_size: 10.0,
+        }
+    }
+
+    fn chars_for(text: &str, y: f32) -> Vec<PdfChar> {
+        text.chars()
+            .enumerate()
+            .map(|(idx, character)| ch(character, idx as f32 * 6.0, y))
+            .collect()
+    }
+
+    #[test]
+    fn group_page_builds_words_lines_and_blocks() {
+        let mut chars = chars_for("Hello world", 10.0);
+        chars.extend(chars_for("Next line", 22.0));
+        let page = PageChars {
+            page_num: 1,
+            width: 200.0,
+            height: 300.0,
+            chars,
+        };
+
+        let blocks = group_page(&page);
+
+        assert_eq!(blocks.len(), 1);
+        assert_eq!(blocks[0].lines.len(), 2);
+        let line_texts: Vec<_> = blocks[0].lines.iter().map(|line| line.text()).collect();
+        assert!(line_texts.contains(&"Hello world".to_string()));
+        assert!(line_texts.contains(&"Next line".to_string()));
+        assert!(
+            blocks
+                .iter()
+                .flat_map(|block| &block.lines)
+                .flat_map(|line| &line.words)
+                .any(|word| word.text == "Hello")
+        );
+    }
+}

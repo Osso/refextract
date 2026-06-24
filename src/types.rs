@@ -72,6 +72,64 @@ impl Block {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn word(text: &str) -> Word {
+        Word {
+            text: text.to_string(),
+            x: 0.0,
+            y: 0.0,
+            width: 10.0,
+            font_size: 10.0,
+            is_superscript: false,
+        }
+    }
+
+    #[test]
+    fn line_text_joins_words_with_spaces() {
+        let line = Line {
+            words: vec![word("Phys."), word("Rev."), word("D")],
+            y: 10.0,
+            x_start: 0.0,
+            x_end: 30.0,
+            font_size: 10.0,
+        };
+
+        assert_eq!(line.text(), "Phys. Rev. D");
+    }
+
+    #[test]
+    fn block_text_joins_lines_with_newlines() {
+        let block = Block {
+            lines: vec![
+                Line {
+                    words: vec![word("[1]"), word("A.")],
+                    y: 10.0,
+                    x_start: 0.0,
+                    x_end: 20.0,
+                    font_size: 10.0,
+                },
+                Line {
+                    words: vec![word("Phys."), word("Rev.")],
+                    y: 22.0,
+                    x_start: 0.0,
+                    x_end: 30.0,
+                    font_size: 10.0,
+                },
+            ],
+            x: 0.0,
+            y: 10.0,
+            width: 30.0,
+            height: 22.0,
+            font_size: 10.0,
+        };
+
+        assert_eq!(block.text(), "[1] A.\nPhys. Rev.");
+    }
+}
+
 /// Zone classification for a block.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ZoneKind {

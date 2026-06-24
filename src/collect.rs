@@ -49,37 +49,50 @@ struct RefHeadingLoc {
 }
 
 fn find_all_reference_headings(zoned_pages: &[Vec<ZonedBlock>]) -> Vec<RefHeadingLoc> {
-    let mut headings = Vec::new();
-    // First try: standalone heading blocks, verified by following reference markers.
-    for (page_idx, page_blocks) in zoned_pages.iter().enumerate() {
-        for (block_idx, zb) in page_blocks.iter().enumerate() {
-            if zones::is_reference_heading(&zb.block)
-                && has_refs_after(zoned_pages, page_idx, block_idx)
-            {
-                headings.push(RefHeadingLoc {
-                    page_idx,
-                    block_idx,
-                    line_idx: None,
-                });
-            }
-        }
-    }
+    let headings = collect_standalone_headings(zoned_pages);
     if !headings.is_empty() {
         return headings;
     }
-    // Second try: heading lines embedded within blocks (also verified)
+
+    collect_embedded_headings(zoned_pages)
+}
+
+fn collect_standalone_headings(zoned_pages: &[Vec<ZonedBlock>]) -> Vec<RefHeadingLoc> {
+    let mut headings = Vec::new();
     for (page_idx, page_blocks) in zoned_pages.iter().enumerate() {
         for (block_idx, zb) in page_blocks.iter().enumerate() {
+            if !zones::is_reference_heading(&zb.block) {
+                continue;
+            }
+            if !has_refs_after(zoned_pages, page_idx, block_idx) {
+                continue;
+            }
+            headings.push(RefHeadingLoc {
+                page_idx,
+                block_idx,
+                line_idx: None,
+            });
+        }
+    }
+    headings
+}
+
+fn collect_embedded_headings(zoned_pages: &[Vec<ZonedBlock>]) -> Vec<RefHeadingLoc> {
+    let mut headings = Vec::new();
+    for (page_idx, page_blocks) in zoned_pages.iter().enumerate() {
+        for (block_idx, zb) in page_blocks.iter().enumerate() {
+            if !has_refs_after(zoned_pages, page_idx, block_idx) {
+                continue;
+            }
             for (line_idx, line) in zb.block.lines.iter().enumerate() {
-                if zones::is_reference_heading_line(&line.text())
-                    && has_refs_after(zoned_pages, page_idx, block_idx)
-                {
-                    headings.push(RefHeadingLoc {
-                        page_idx,
-                        block_idx,
-                        line_idx: Some(line_idx),
-                    });
+                if !zones::is_reference_heading_line(&line.text()) {
+                    continue;
                 }
+                headings.push(RefHeadingLoc {
+                    page_idx,
+                    block_idx,
+                    line_idx: Some(line_idx),
+                });
             }
         }
     }
@@ -88,39 +101,33 @@ fn find_all_reference_headings(zoned_pages: &[Vec<ZonedBlock>]) -> Vec<RefHeadin
 
 /// Verify a heading by checking if blocks after it contain citation-like content.
 fn has_refs_after(zoned_pages: &[Vec<ZonedBlock>], page_idx: usize, block_idx: usize) -> bool {
+    let mut citation_score = 0_usize;
+    if scan_blocks_for_refs(&zoned_pages[page_idx][block_idx + 1..], &mut citation_score) {
+        return true;
+    }
+
+    let end = (page_idx + 4).min(zoned_pages.len());
+    for next_page in &zoned_pages[page_idx + 1..end] {
+        if scan_blocks_for_refs(next_page, &mut citation_score) {
+            return true;
+        }
+    }
+    false
+}
+
+fn scan_blocks_for_refs(blocks: &[ZonedBlock], citation_score: &mut usize) -> bool {
     let mut checked = 0;
-    let mut citation_score = 0;
-    // Check remaining blocks on the heading page.
-    for zb in &zoned_pages[page_idx][block_idx + 1..] {
-        if zb.zone == ZoneKind::Header || zb.zone == ZoneKind::PageNumber {
+    for zb in blocks {
+        if is_header_or_page_number(zb) {
             continue;
         }
-        citation_score += score_citation_block(&zb.block);
-        if citation_score >= 4 {
+        *citation_score += score_citation_block(&zb.block);
+        if *citation_score >= 4 {
             return true;
         }
         checked += 1;
         if checked >= 15 {
             break;
-        }
-    }
-    // Check up to 3 subsequent pages (handles appendix pages between
-    // heading and continuation of references).
-    let end = (page_idx + 4).min(zoned_pages.len());
-    for next_page in &zoned_pages[page_idx + 1..end] {
-        let mut page_checked = 0;
-        for zb in next_page {
-            if zb.zone == ZoneKind::Header || zb.zone == ZoneKind::PageNumber {
-                continue;
-            }
-            citation_score += score_citation_block(&zb.block);
-            if citation_score >= 4 {
-                return true;
-            }
-            page_checked += 1;
-            if page_checked >= 15 {
-                break;
-            }
         }
     }
     false
@@ -198,39 +205,65 @@ fn assess_subsequent_page(page_blocks: &[ZonedBlock], use_markers: bool) -> Page
     let mut saw_heading = false;
 
     for zb in page_blocks {
-        if zb.zone == ZoneKind::Header || zb.zone == ZoneKind::PageNumber {
+        if is_header_or_page_number(zb) {
             continue;
         }
         if is_standalone_ref_heading(&zb.block) {
             saw_heading = true;
             continue;
         }
-        if use_markers {
-            if has_any_marker(&zb.block) {
-                has_markers = true;
-            }
-        } else {
-            for line in &zb.block.lines {
-                total_lines += 1;
-                if has_citation_content(&line.text()) {
-                    citation_lines += 1;
-                }
-            }
-        }
+        update_page_ref_signals(
+            zb,
+            use_markers,
+            &mut has_markers,
+            &mut citation_lines,
+            &mut total_lines,
+        );
         blocks.push((zb.block.text(), zb.page_num));
     }
 
-    let has_refs = if use_markers {
-        has_markers
-    } else {
-        citation_lines >= 3 && total_lines > 0 && citation_lines * 2 >= total_lines
-    };
+    let has_refs = reference_signals_match(use_markers, has_markers, citation_lines, total_lines);
 
     PageAssessment {
         blocks,
         has_refs,
         saw_heading,
     }
+}
+
+fn is_header_or_page_number(block: &ZonedBlock) -> bool {
+    block.zone == ZoneKind::Header || block.zone == ZoneKind::PageNumber
+}
+
+fn update_page_ref_signals(
+    zb: &ZonedBlock,
+    use_markers: bool,
+    has_markers: &mut bool,
+    citation_lines: &mut i32,
+    total_lines: &mut i32,
+) {
+    if use_markers {
+        *has_markers |= has_any_marker(&zb.block);
+        return;
+    }
+    for line in &zb.block.lines {
+        *total_lines += 1;
+        if has_citation_content(&line.text()) {
+            *citation_lines += 1;
+        }
+    }
+}
+
+fn reference_signals_match(
+    use_markers: bool,
+    has_markers: bool,
+    citation_lines: i32,
+    total_lines: i32,
+) -> bool {
+    if use_markers {
+        return has_markers;
+    }
+    citation_lines >= 3 && total_lines > 0 && citation_lines * 2 >= total_lines
 }
 
 fn gather_subsequent_pages(
@@ -315,3 +348,6 @@ fn normalize_for_dedup(text: &str) -> String {
         .flat_map(|c| c.to_lowercase())
         .collect()
 }
+
+#[cfg(test)]
+mod tests;

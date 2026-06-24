@@ -265,34 +265,54 @@ fn find_superscript_pairs(
             continue;
         }
 
-        if let Some(caps) = bare_num_re.captures(trimmed) {
-            let num: u32 = caps[1].parse().unwrap_or(0);
-            // Skip year-like numbers (1900-2099) — not reference markers
-            if (1900..2100).contains(&num) {
-                gap += 1;
-                continue;
-            }
-            let marker = caps[1].to_string();
-            let citation = collect_citation_after(all_blocks, i + 1);
-            if !citation.is_empty() {
-                pairs.push((marker, citation, all_blocks[i].page_num));
+        match classify_superscript_block(trimmed, all_blocks, i, bare_num_re) {
+            SuperscriptBlock::Pair(pair) => {
+                pairs.push(pair);
                 gap = 0;
             }
-        } else if has_citation_content(trimmed) {
-            gap = 0;
-        } else {
-            gap += 1;
-            // Allow gaps for extended notes in references (some refs
-            // have multi-block explanatory text without citation markers).
-            // Stop after 30 consecutive non-ref, non-citation blocks.
-            if !pairs.is_empty() && gap >= 30 {
-                break;
+            SuperscriptBlock::Citation => {
+                gap = 0;
+            }
+            SuperscriptBlock::Gap => {
+                gap += 1;
+                if !pairs.is_empty() && gap >= 30 {
+                    break;
+                }
             }
         }
     }
 
     pairs.reverse();
     pairs
+}
+
+enum SuperscriptBlock {
+    Pair((String, String, usize)),
+    Citation,
+    Gap,
+}
+
+fn classify_superscript_block(
+    trimmed: &str,
+    all_blocks: &[&ZonedBlock],
+    index: usize,
+    bare_num_re: &Regex,
+) -> SuperscriptBlock {
+    if let Some(caps) = bare_num_re.captures(trimmed) {
+        let num: u32 = caps[1].parse().unwrap_or(0);
+        if (1900..2100).contains(&num) {
+            return SuperscriptBlock::Gap;
+        }
+        let citation = collect_citation_after(all_blocks, index + 1);
+        if citation.is_empty() {
+            return SuperscriptBlock::Gap;
+        }
+        return SuperscriptBlock::Pair((caps[1].to_string(), citation, all_blocks[index].page_num));
+    }
+    if has_citation_content(trimmed) {
+        return SuperscriptBlock::Citation;
+    }
+    SuperscriptBlock::Gap
 }
 
 /// Collect citation text from blocks following a bare-number marker.
@@ -344,51 +364,69 @@ pub(crate) fn split_into_references(
     source: ReferenceSource,
 ) -> Vec<RawReference> {
     let mut refs = Vec::new();
-    let mut current_text = String::new();
-    let mut current_marker: Option<String> = None;
-    let mut current_page = 0;
+    let mut state = ReferenceBuildState::default();
 
     for (text, page_num) in blocks {
         for line in text.split('\n') {
-            let line = line.trim();
-            if line.is_empty() {
-                continue;
-            }
-            if let Some(caps) = LINE_MARKER_RE.captures(line) {
-                if is_year_continuation(&caps, line) && !current_text.is_empty() {
-                    // "(2011)." on its own line — append to current ref
-                    current_text.push(' ');
-                    current_text.push_str(line);
-                } else {
-                    flush_reference(
-                        &mut refs,
-                        &mut current_text,
-                        &current_marker,
-                        current_page,
-                        source,
-                    );
-                    current_marker = extract_marker(&caps);
-                    current_text = LINE_MARKER_RE.replace(line, "").trim().to_string();
-                    current_page = *page_num;
-                }
-            } else if !current_text.is_empty() {
-                current_text.push(' ');
-                current_text.push_str(line);
-            } else {
-                current_text = line.to_string();
-                current_page = *page_num;
-            }
+            append_reference_line(&mut refs, &mut state, line.trim(), *page_num, source);
         }
     }
     flush_reference(
         &mut refs,
-        &mut current_text,
-        &current_marker,
-        current_page,
+        &mut state.current_text,
+        &state.current_marker,
+        state.current_page,
         source,
     );
     split_author_date_blobs(&mut refs);
     refs
+}
+
+#[derive(Default)]
+struct ReferenceBuildState {
+    current_text: String,
+    current_marker: Option<String>,
+    current_page: usize,
+}
+
+fn append_reference_line(
+    refs: &mut Vec<RawReference>,
+    state: &mut ReferenceBuildState,
+    line: &str,
+    page_num: usize,
+    source: ReferenceSource,
+) {
+    if line.is_empty() {
+        return;
+    }
+    if let Some(caps) = LINE_MARKER_RE.captures(line) {
+        if is_year_continuation(&caps, line) && !state.current_text.is_empty() {
+            append_text_line(&mut state.current_text, line);
+            return;
+        }
+        flush_reference(
+            refs,
+            &mut state.current_text,
+            &state.current_marker,
+            state.current_page,
+            source,
+        );
+        state.current_marker = extract_marker(&caps);
+        state.current_text = LINE_MARKER_RE.replace(line, "").trim().to_string();
+        state.current_page = page_num;
+        return;
+    }
+    if state.current_text.is_empty() {
+        state.current_text = line.to_string();
+        state.current_page = page_num;
+    } else {
+        append_text_line(&mut state.current_text, line);
+    }
+}
+
+fn append_text_line(current_text: &mut String, line: &str) {
+    current_text.push(' ');
+    current_text.push_str(line);
 }
 
 fn split_author_date_blobs(refs: &mut Vec<RawReference>) {
@@ -512,69 +550,68 @@ fn find_biblio_label_positions(text: &str) -> Vec<usize> {
 /// followed by the year. Returns the byte offset of the first surname character.
 fn find_label_start(text: &str, year_pos: usize) -> Option<usize> {
     let before = &text[..year_pos];
-    // Walk backward past spaces, "et al.", "and Name", commas, author names
     let trimmed = before.trim_end();
     if trimmed.is_empty() {
         return None;
     }
 
-    // The label is a sequence of words ending at the year. We scan backward
-    // through words, accepting: uppercase names, "et", "al.", "and", commas,
-    // hyphens within names. Stop at a word that can't be part of a label.
     let bytes = trimmed.as_bytes();
     let mut pos = bytes.len();
 
     loop {
-        // Skip trailing whitespace and commas
-        while pos > 0 && matches!(bytes[pos - 1], b' ' | b',' | b'\t') {
-            pos -= 1;
-        }
+        pos = skip_label_separators(bytes, pos);
         if pos == 0 {
             break;
         }
-
-        // Try to consume a word backward
         let word_end = pos;
-        while pos > 0 && !matches!(bytes[pos - 1], b' ' | b',' | b'\t') {
-            pos -= 1;
-        }
+        pos = scan_word_start(bytes, pos);
         let word = &trimmed[pos..word_end];
 
-        // Accept: "et", "al.", "and", "de", "di", "von", "van", "le", "la"
-        let word_lower = word.to_lowercase();
-        let is_connector = matches!(
-            word_lower.as_str(),
-            "et" | "al." | "and" | "de" | "di" | "du" | "von" | "van" | "le" | "la"
-        );
-        if is_connector {
+        if is_label_connector(word) || is_label_name(word) {
             continue;
         }
-
-        // Accept: capitalized word (possibly hyphenated, like "Aguilar-Benitez")
-        let is_name = word.split('-').all(|part| {
-            let mut chars = part.chars();
-            chars.next().is_some_and(|c| c.is_ascii_uppercase())
-                && chars.all(|c| c.is_alphanumeric() || c == '\'')
-        });
-        if is_name {
-            continue;
-        }
-
-        // Not a label word — the label starts after this point
-        // Restore pos to word_end (we consumed a non-label word)
         pos = word_end;
         break;
     }
 
-    // Skip any leading whitespace/commas after the boundary
-    while pos < trimmed.len() && matches!(trimmed.as_bytes()[pos], b' ' | b',' | b'\t') {
+    while pos < trimmed.len() && is_label_separator(trimmed.as_bytes()[pos]) {
         pos += 1;
     }
-
-    // Compute the byte offset in the original text
-    // `trimmed` is `before.trim_end()` which is `text[..year_pos].trim_end()`
-    // `pos` is relative to `trimmed`, which starts at byte 0 of `text`
     if pos < trimmed.len() { Some(pos) } else { None }
+}
+
+fn scan_word_start(bytes: &[u8], mut pos: usize) -> usize {
+    while pos > 0 && !is_label_separator(bytes[pos - 1]) {
+        pos -= 1;
+    }
+    pos
+}
+
+fn skip_label_separators(bytes: &[u8], mut pos: usize) -> usize {
+    while pos > 0 && is_label_separator(bytes[pos - 1]) {
+        pos -= 1;
+    }
+    pos
+}
+
+fn is_label_separator(byte: u8) -> bool {
+    matches!(byte, b' ' | b',' | b'\t')
+}
+
+fn is_label_connector(word: &str) -> bool {
+    let word_lower = word.to_lowercase();
+    matches!(
+        word_lower.as_str(),
+        "et" | "al." | "and" | "de" | "di" | "du" | "von" | "van" | "le" | "la"
+    )
+}
+
+fn is_label_name(word: &str) -> bool {
+    word.split('-').all(|part| {
+        let mut chars = part.chars();
+        chars.next().is_some_and(|c| c.is_ascii_uppercase())
+            && chars.all(|c| c.is_alphanumeric() || c == '\'')
+    })
 }
 
 fn validate_split_position(text: &str, author_pos: usize) -> Option<usize> {
@@ -678,3 +715,6 @@ fn flush_reference(
     }
     text.clear();
 }
+
+#[cfg(test)]
+mod tests;

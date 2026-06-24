@@ -354,33 +354,35 @@ fn try_emit_dsl_token(chars: &[char], i: usize, out: &mut String) -> Option<usiz
         out.push_str(r"[01]\d");
         return Some(2);
     }
-    if chars[i] == '9' && i + 1 < chars.len() && chars[i + 1] == '?' {
-        out.push_str(r"\d?");
-        return Some(2);
+    emit_single_char_dsl_token(chars, i, out)
+}
+
+fn emit_single_char_dsl_token(chars: &[char], i: usize, out: &mut String) -> Option<usize> {
+    match chars[i] {
+        '9' if i + 1 < chars.len() && chars[i + 1] == '?' => {
+            out.push_str(r"\d?");
+            Some(2)
+        }
+        '9' => {
+            out.push_str(r"\d");
+            Some(1)
+        }
+        's' | ' ' => {
+            out.push_str(r"[\s\-/]+");
+            Some(1)
+        }
+        'a' => {
+            out.push_str(r"[A-Za-z]");
+            let extra = if i + 1 < chars.len() && chars[i + 1] == '?' {
+                out.push('?');
+                1
+            } else {
+                0
+            };
+            Some(1 + extra)
+        }
+        _ => None,
     }
-    if chars[i] == '9' {
-        out.push_str(r"\d");
-        return Some(1);
-    }
-    if chars[i] == 's' {
-        out.push_str(r"[\s\-/]+");
-        return Some(1);
-    }
-    if chars[i] == 'a' {
-        out.push_str(r"[A-Za-z]");
-        let extra = if i + 1 < chars.len() && chars[i + 1] == '?' {
-            out.push('?');
-            1
-        } else {
-            0
-        };
-        return Some(1 + extra);
-    }
-    if chars[i] == ' ' {
-        out.push_str(r"[\s\-/]+");
-        return Some(1);
-    }
-    None
 }
 
 fn emit_literal(ch: char, out: &mut String) -> usize {

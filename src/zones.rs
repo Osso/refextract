@@ -1,4 +1,10 @@
+use once_cell::sync::Lazy;
+use regex::Regex;
+
 use crate::types::{Block, ZoneKind, ZonedBlock};
+
+static TRAILING_PAREN_RANGE_RE: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"\s*\(\d+\)(?:-\(\d+\))?\s*$").unwrap());
 
 /// Classify blocks on a page into zones based on position and font.
 pub fn classify_page(
@@ -72,46 +78,14 @@ pub fn is_reference_heading_line(line_text: &str) -> bool {
 
 /// Strip trailing parenthesized number ranges: "(36)-(84)", "(1)-(35)"
 fn strip_trailing_paren_range(text: &str) -> &str {
-    // Match pattern: optional whitespace + (N)-(N) or (N) at the end
     let trimmed = text.trim_end();
-    let bytes = trimmed.as_bytes();
-    if bytes.last() != Some(&b')') {
+    let Some(m) = TRAILING_PAREN_RANGE_RE.find(trimmed) else {
+        return trimmed;
+    };
+    if m.end() != trimmed.len() {
         return trimmed;
     }
-    // Walk backward to find the start of the paren range
-    let mut i = trimmed.len();
-    // Accept: (digits)-(digits) or (digits)
-    // Work backward through: )digits(-)digits(
-    let mut depth = 0;
-    let mut found_paren_group = false;
-    while i > 0 {
-        i -= 1;
-        match bytes[i] {
-            b')' => depth += 1,
-            b'(' => {
-                depth -= 1;
-                if depth == 0 {
-                    found_paren_group = true;
-                    // Check for preceding dash and another group: -(N)
-                    if i > 0 && bytes[i - 1] == b'-' && i >= 2 && bytes[i - 2] == b')' {
-                        // Continue to consume the preceding (N)- group
-                        i -= 1; // skip '-'
-                        continue;
-                    }
-                    break;
-                }
-            }
-            b'0'..=b'9' | b'-' if depth > 0 => continue,
-            _ if depth == 0 && found_paren_group => break,
-            _ if depth > 0 => return trimmed, // non-digit inside parens
-            _ => return trimmed,
-        }
-    }
-    if found_paren_group {
-        trimmed[..i].trim_end()
-    } else {
-        trimmed
-    }
+    trimmed[..m.start()].trim_end()
 }
 
 /// Detect dot-leader patterns used in Tables of Contents, e.g.:
@@ -155,41 +129,42 @@ fn has_dot_leaders(text: &str) -> bool {
 }
 
 fn is_heading_text(text: &str) -> bool {
-    // Reject TOC entries: lines with dot leaders like "References . . . . ." or "References....."
-    // Three or more consecutive dots (with optional spaces between) indicate a TOC page entry.
     if has_dot_leaders(text) {
         return false;
     }
-    // Strip trailing punctuation (colon, period) and parenthesized ranges
-    // like "(36)-(84)" in "References (36)-(84)"
     let text = text.trim_end_matches([':', '.']);
     let text = strip_trailing_paren_range(text);
-    // Exact matches
-    if matches!(
-        text,
-        "REFERENCES" | "BIBLIOGRAPHY" | "REFERENCES AND NOTES" | "LITERATURE CITED"
-    ) {
+    if is_exact_heading(text) {
         return true;
     }
     if text.len() >= 30 {
         return false;
     }
-    // Accept section-numbered headings: "IX. REFERENCES", "5. REFERENCES"
-    // Accept line-numbered headings: "1204 REFERENCES" (line numbers in
-    // papers like 0810.4930 and 1104.1607 have multi-digit prefixes)
-    // Reject running headers: "REFERENCES" with a page number suffix
+    is_prefixed_heading(text) || is_suffix_number_heading(text)
+}
+
+fn is_exact_heading(text: &str) -> bool {
+    matches!(
+        text,
+        "REFERENCES" | "BIBLIOGRAPHY" | "REFERENCES AND NOTES" | "LITERATURE CITED"
+    )
+}
+
+fn is_prefixed_heading(text: &str) -> bool {
     let prefix = text
         .chars()
         .take_while(|c| c.is_ascii_digit() || *c == '.' || *c == ' ')
         .collect::<String>();
     let stripped = &text[prefix.len()..];
-    if stripped == "REFERENCES" || stripped == "BIBLIOGRAPHY" {
-        // Prefix must end with space/dot before heading (line numbers always do)
-        let has_separator = prefix.ends_with(' ') || prefix.ends_with('.');
-        let digit_count = prefix.chars().filter(|c| c.is_ascii_digit()).count();
-        return digit_count <= 1 || has_separator;
+    if stripped != "REFERENCES" && stripped != "BIBLIOGRAPHY" {
+        return false;
     }
-    // Reject suffix numbers: "REFERENCES 835" — likely running headers
+    let has_separator = prefix.ends_with(' ') || prefix.ends_with('.');
+    let digit_count = prefix.chars().filter(|c| c.is_ascii_digit()).count();
+    digit_count <= 1 || has_separator
+}
+
+fn is_suffix_number_heading(text: &str) -> bool {
     let suffix = text
         .chars()
         .rev()
@@ -197,11 +172,11 @@ fn is_heading_text(text: &str) -> bool {
         .collect::<String>();
     let suffix_len = suffix.len();
     let stripped = text[..text.len() - suffix_len].trim_end();
-    if stripped == "REFERENCES" || stripped == "BIBLIOGRAPHY" {
-        let digit_count = suffix.chars().filter(|c| c.is_ascii_digit()).count();
-        return digit_count <= 1;
+    if stripped != "REFERENCES" && stripped != "BIBLIOGRAPHY" {
+        return false;
     }
-    false
+    let digit_count = suffix.chars().filter(|c| c.is_ascii_digit()).count();
+    digit_count <= 1
 }
 
 /// Compute the dominant (most common) font size across all pages.
@@ -224,4 +199,85 @@ pub fn compute_body_font_size(all_blocks: &[Vec<Block>]) -> f32 {
         .max_by_key(|(_, count)| *count)
         .map(|(key, _)| *key as f32 / 10.0)
         .unwrap_or(10.0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::types::{Block, Line, Word, ZoneKind};
+
+    fn word(text: &str, superscript: bool) -> Word {
+        Word {
+            text: text.to_string(),
+            x: 10.0,
+            y: 10.0,
+            width: 20.0,
+            font_size: if superscript { 7.0 } else { 10.0 },
+            is_superscript: superscript,
+        }
+    }
+
+    fn block(text: &str, y: f32, font_size: f32) -> Block {
+        Block {
+            lines: vec![Line {
+                words: text
+                    .split_whitespace()
+                    .map(|part| word(part, false))
+                    .collect(),
+                y,
+                x_start: 10.0,
+                x_end: 100.0,
+                font_size,
+            }],
+            x: 10.0,
+            y,
+            width: 90.0,
+            height: 12.0,
+            font_size,
+        }
+    }
+
+    #[test]
+    fn reference_heading_accepts_common_forms() {
+        assert!(is_reference_heading_line("References"));
+        assert!(is_reference_heading_line("Bibliography"));
+        assert!(is_reference_heading_line("8. References"));
+        assert!(is_reference_heading_line("REFERENCES (36)-(84)"));
+    }
+
+    #[test]
+    fn reference_heading_rejects_toc_dot_leaders() {
+        assert!(!is_reference_heading_line("References . . . . . . 42"));
+        assert!(!is_reference_heading_line("References........42"));
+    }
+
+    #[test]
+    fn classify_page_marks_header_page_number_footnote_and_body() {
+        let mut footnote = block("1 Footnote citation Phys. Rev. 2020", 120.0, 7.0);
+        footnote.lines[0].words[0].is_superscript = true;
+        let blocks = vec![
+            block("Journal header", 780.0, 10.0),
+            block("12", 20.0, 10.0),
+            block("Main body paragraph", 400.0, 10.0),
+            footnote,
+        ];
+
+        let zones = classify_page(&blocks, 1, 800.0, 10.0);
+
+        assert_eq!(zones[0].zone, ZoneKind::Header);
+        assert_eq!(zones[1].zone, ZoneKind::PageNumber);
+        assert_eq!(zones[2].zone, ZoneKind::Body);
+        assert_eq!(zones[3].zone, ZoneKind::Footnote);
+    }
+
+    #[test]
+    fn compute_body_font_size_uses_most_common_font() {
+        let pages = vec![vec![
+            block("small", 20.0, 8.0),
+            block("body one", 100.0, 10.0),
+            block("body two", 120.0, 10.0),
+        ]];
+
+        assert_eq!(compute_body_font_size(&pages), 10.0);
+    }
 }

@@ -144,7 +144,9 @@ fn convert_arxiv_url_spans(spans: &mut [Span]) {
 
 fn add_doi_spans(spans: &mut Vec<Span>, text: &str) {
     for m in DOI_RE.find_iter(text) {
-        let matched = m.as_str().trim_end_matches(|c: char| ".)]}>".contains(c));
+        let matched = m
+            .as_str()
+            .trim_end_matches(|c: char| matches!(c, '.' | ')' | ']' | '}' | '>'));
         let end = m.start() + matched.len();
         if !overlaps_existing(spans, m.start(), end) {
             spans.push(Span {
@@ -445,55 +447,13 @@ fn ends_with_dash(word: &str) -> bool {
 /// Try to parse compound numeration patterns: volume:page, volume(year)page, etc.
 /// Returns true if matched and tokens were emitted.
 fn try_compound_numeration(clean: &str, tokens: &mut Vec<Token>) -> bool {
-    // Compact volume(year)page: "417(1994)181"
-    if let Some(caps) = VOLUME_YEAR_PAGE_RE.captures(clean) {
-        push_number(tokens, &caps[1]);
-        push_year(tokens, &caps[2]);
-        push_page_or_number(tokens, &caps[3]);
-        return true;
-    }
-    // Volume:page: "70:094505" or old-style "76B:436"
-    if let Some(caps) = VOLUME_COLON_PAGE_RE.captures(clean) {
-        push_number(tokens, &caps[1]);
-        if let Some(letter) = caps.get(2) {
-            tokens.push(Token {
-                kind: TokenKind::Word,
-                text: letter.as_str().to_string(),
-                normalized: None,
-            });
-        }
-        push_page_or_number(tokens, &caps[3]);
-        return true;
-    }
-    // Compact volume(year): "301(1993)"
-    if let Some(caps) = VOLUME_YEAR_RE.captures(clean) {
-        push_number(tokens, &caps[1]);
-        push_year(tokens, &caps[2]);
-        return true;
-    }
-    // Volume(issue):page: "72(2):1346–1349" → volume + page
-    if let Some(caps) = VOLUME_ISSUE_COLON_PAGE_RE.captures(clean) {
-        push_number(tokens, &caps[1]);
-        push_page_or_number(tokens, &caps[2]);
-        return true;
-    }
-    // Year with issue: "2007(12)" → emit year + issue number (JCAP/JHEP format)
-    if let Some(caps) = YEAR_ISSUE_RE.captures(clean) {
-        push_year(tokens, &caps[1]);
-        push_number(tokens, &caps[2]);
-        return true;
-    }
-    // Volume with issue number: "82(25)" → emit volume only
-    if let Some(caps) = VOLUME_ISSUE_RE.captures(clean) {
-        push_number(tokens, &caps[1]);
-        return true;
-    }
-    // Article number with suffix: "111301(R)", "040404/1" → emit digits
-    if let Some(caps) = ARTICLE_NUMBER_RE.captures(clean) {
-        push_number(tokens, &caps[1]);
-        return true;
-    }
-    false
+    emit_volume_year_page(clean, tokens)
+        || emit_volume_colon_page(clean, tokens)
+        || emit_volume_year(clean, tokens)
+        || emit_volume_issue_colon_page(clean, tokens)
+        || emit_year_issue(clean, tokens)
+        || emit_volume_issue(clean, tokens)
+        || emit_article_number(clean, tokens)
 }
 
 fn is_ibid_word(s: &str) -> bool {
@@ -506,20 +466,19 @@ fn is_ibid_word(s: &str) -> bool {
         || lower.ends_with(":ibid.")
 }
 
-fn try_year(clean: &str, word: &str, tokens: &mut Vec<Token>) -> bool {
+fn try_year(clean: &str, word: &str) -> Option<Token> {
     let Some(caps) = YEAR_RE.captures(clean) else {
-        return false;
+        return None;
     };
     let year: u32 = caps[1].parse().unwrap_or(0);
-    if !(1900..=2030).contains(&year) {
-        return false;
+    if year < 1900 || year > 2030 {
+        return None;
     }
-    tokens.push(Token {
+    Some(Token {
         kind: TokenKind::Year,
         text: word.to_string(),
         normalized: Some(caps[1].to_string()),
-    });
-    true
+    })
 }
 
 fn classify_word(word: &str, tokens: &mut Vec<Token>) {
@@ -528,39 +487,12 @@ fn classify_word(word: &str, tokens: &mut Vec<Token>) {
     if try_compound_numeration(clean, tokens) {
         return;
     }
-    if is_ibid_word(clean) {
-        tokens.push(Token {
-            kind: TokenKind::Ibid,
-            text: word.to_string(),
-            normalized: None,
-        });
+    if let Some(token) = classify_simple_token(clean, word) {
+        tokens.push(token);
         return;
     }
-    if is_punctuation(word) {
-        tokens.push(Token {
-            kind: TokenKind::Punctuation,
-            text: word.to_string(),
-            normalized: None,
-        });
-        return;
-    }
-    if try_year(clean, word, tokens) {
-        return;
-    }
-    if PAGE_RANGE_RE.is_match(clean) {
-        tokens.push(Token {
-            kind: TokenKind::PageRange,
-            text: word.to_string(),
-            normalized: None,
-        });
-        return;
-    }
-    if NUMBER_RE.is_match(clean) && clean.chars().all(|c| c.is_ascii_digit()) {
-        tokens.push(Token {
-            kind: TokenKind::Number,
-            text: word.to_string(),
-            normalized: None,
-        });
+    if let Some(token) = try_year(clean, word) {
+        tokens.push(token);
         return;
     }
     if let Some(collab) = kb::match_collaboration(clean) {
@@ -576,6 +508,107 @@ fn classify_word(word: &str, tokens: &mut Vec<Token>) {
         text: word.to_string(),
         normalized: None,
     });
+}
+
+fn classify_simple_token(clean: &str, word: &str) -> Option<Token> {
+    if is_ibid_word(clean) {
+        return Some(Token {
+            kind: TokenKind::Ibid,
+            text: word.to_string(),
+            normalized: None,
+        });
+    }
+    if is_punctuation(word) {
+        return Some(Token {
+            kind: TokenKind::Punctuation,
+            text: word.to_string(),
+            normalized: None,
+        });
+    }
+    if PAGE_RANGE_RE.is_match(clean) {
+        return Some(Token {
+            kind: TokenKind::PageRange,
+            text: word.to_string(),
+            normalized: None,
+        });
+    }
+    if NUMBER_RE.is_match(clean) && clean.chars().all(|c| c.is_ascii_digit()) {
+        return Some(Token {
+            kind: TokenKind::Number,
+            text: word.to_string(),
+            normalized: None,
+        });
+    }
+    None
+}
+
+fn emit_volume_year_page(clean: &str, tokens: &mut Vec<Token>) -> bool {
+    let Some(caps) = VOLUME_YEAR_PAGE_RE.captures(clean) else {
+        return false;
+    };
+    push_number(tokens, &caps[1]);
+    push_year(tokens, &caps[2]);
+    push_page_or_number(tokens, &caps[3]);
+    true
+}
+
+fn emit_volume_colon_page(clean: &str, tokens: &mut Vec<Token>) -> bool {
+    let Some(caps) = VOLUME_COLON_PAGE_RE.captures(clean) else {
+        return false;
+    };
+    push_number(tokens, &caps[1]);
+    if let Some(letter) = caps.get(2) {
+        tokens.push(Token {
+            kind: TokenKind::Word,
+            text: letter.as_str().to_string(),
+            normalized: None,
+        });
+    }
+    push_page_or_number(tokens, &caps[3]);
+    true
+}
+
+fn emit_volume_year(clean: &str, tokens: &mut Vec<Token>) -> bool {
+    let Some(caps) = VOLUME_YEAR_RE.captures(clean) else {
+        return false;
+    };
+    push_number(tokens, &caps[1]);
+    push_year(tokens, &caps[2]);
+    true
+}
+
+fn emit_volume_issue_colon_page(clean: &str, tokens: &mut Vec<Token>) -> bool {
+    let Some(caps) = VOLUME_ISSUE_COLON_PAGE_RE.captures(clean) else {
+        return false;
+    };
+    push_number(tokens, &caps[1]);
+    push_page_or_number(tokens, &caps[2]);
+    true
+}
+
+fn emit_year_issue(clean: &str, tokens: &mut Vec<Token>) -> bool {
+    let Some(caps) = YEAR_ISSUE_RE.captures(clean) else {
+        return false;
+    };
+    push_year(tokens, &caps[1]);
+    push_number(tokens, &caps[2]);
+    true
+}
+
+fn emit_volume_issue(clean: &str, tokens: &mut Vec<Token>) -> bool {
+    let Some(caps) = VOLUME_ISSUE_RE.captures(clean) else {
+        return false;
+    };
+    push_number(tokens, &caps[1]);
+    true
+}
+
+fn emit_article_number(clean: &str, tokens: &mut Vec<Token>) -> bool {
+    let Some(caps) = ARTICLE_NUMBER_RE.captures(clean) else {
+        return false;
+    };
+    push_number(tokens, &caps[1]);
+    true
 }
 
 fn push_number(tokens: &mut Vec<Token>, num: &str) {
@@ -614,3 +647,6 @@ fn is_punctuation(word: &str) -> bool {
         "," | "." | ";" | ":" | "and" | "et" | "al." | "al" | "&" | "-" | "–" | "—"
     )
 }
+
+#[cfg(test)]
+mod tests;
