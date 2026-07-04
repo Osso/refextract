@@ -144,9 +144,7 @@ fn convert_arxiv_url_spans(spans: &mut [Span]) {
 
 fn add_doi_spans(spans: &mut Vec<Span>, text: &str) {
     for m in DOI_RE.find_iter(text) {
-        let matched = m
-            .as_str()
-            .trim_end_matches(|c: char| matches!(c, '.' | ')' | ']' | '}' | '>'));
+        let matched = m.as_str().trim_end_matches(['.', ')', ']', '}', '>']);
         let end = m.start() + matched.len();
         if !overlaps_existing(spans, m.start(), end) {
             spans.push(Span {
@@ -467,11 +465,9 @@ fn is_ibid_word(s: &str) -> bool {
 }
 
 fn try_year(clean: &str, word: &str) -> Option<Token> {
-    let Some(caps) = YEAR_RE.captures(clean) else {
-        return None;
-    };
+    let caps = YEAR_RE.captures(clean)?;
     let year: u32 = caps[1].parse().unwrap_or(0);
-    if year < 1900 || year > 2030 {
+    if !(1900..=2030).contains(&year) {
         return None;
     }
     Some(Token {

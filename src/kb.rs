@@ -202,7 +202,7 @@ pub static JOURNAL_TITLES: Lazy<Vec<(String, String)>> = Lazy::new(|| {
             Some((normalize_abbrev(full.trim()), abbrev.trim().to_string()))
         })
         .collect();
-    entries.sort_by(|a, b| b.0.len().cmp(&a.0.len()));
+    entries.sort_by_key(|entry| std::cmp::Reverse(entry.0.len()));
     entries
 });
 
@@ -230,7 +230,7 @@ pub static JOURNAL_ABBREVS: Lazy<Vec<(String, String)>> = Lazy::new(|| {
             Some((normalized, abbrev.to_string()))
         })
         .collect();
-    entries.sort_by(|a, b| b.0.len().cmp(&a.0.len()));
+    entries.sort_by_key(|entry| std::cmp::Reverse(entry.0.len()));
     entries
 });
 
